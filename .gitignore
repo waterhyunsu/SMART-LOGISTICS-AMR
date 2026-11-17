@@ -1,0 +1,43 @@
+# ROS2 colcon workspace
+**/build/
+**/install/
+**/log/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Python build / test artifacts
+*.egg-info/
+.coverage
+htmlcov/
+
+# Databases (tracked migrations/schemas remain allowed)
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*-wal
+*-shm
+
+# OS/IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+
+# Local output and transient caches
+*.tmp
+*.swp
+*.bak
+*.log
+
+# IMPORTANT: Do not blanket-ignore research datasets, scripts or reproducible configs.
