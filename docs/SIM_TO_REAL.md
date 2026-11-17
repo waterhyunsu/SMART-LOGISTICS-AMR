@@ -4,7 +4,8 @@
 > **승인권자:** A — 윤현수 (팀장)  
 > **기획 기준:** 2026.11.17 최종 기획 제안서  
 > **관련 문서:** `PRD.md`, `ARCHITECTURE.md`, `INTERFACES.md`  
-> **실제 장비 검증 상태:** 미확인 항목은 별도 표시
+> **실제 장비 검증 상태:** 미확인 항목은 별도 표시  
+> **개발 기준:** Ubuntu 24.04 / ROS2 Jazzy / Gazebo Harmonic
 
 본 문서는 SMART-LOGISTICS AMR의 MOCK·SIM·REAL 실행환경, TurtleBot3 기본 구동, Nav2 주행 준비 상태, 실차 검증 Gate 및 안전 절차를 정의한다.
 
@@ -46,7 +47,7 @@ C는 실제 TurtleBot3의 기본 동작환경을 구성하고 관리한다.
 - LiDAR·카메라 장착 및 간섭 확인
 - 바스켓·물품 모형·마커 준비
 - 모터·센서 드라이버 구동
-- ROS2 Humble 및 TurtleBot3 Bringup
+- ROS2 Jazzy 및 TurtleBot3 Bringup (실차 호환성 별도 검증)
 - 기본 TF와 Odometry 제공 상태 확인
 - PC·로봇 네트워크 및 DDS 설정
 - 기본 실행 Launch와 복구 절차 관리
@@ -102,7 +103,7 @@ MOCK의 성공은 실제 주행 가능성을 의미하지 않는다.
 
 ### 3.2. SIM
 
-**목적:** Gazebo 및 Nav2를 이용한 주행·통합 검증
+**목적:** Gazebo Harmonic 및 ROS2 Jazzy·Nav2를 이용한 주행·통합 검증
 
 검증 대상:
 
@@ -113,7 +114,7 @@ MOCK의 성공은 실제 주행 가능성을 의미하지 않는다.
 - 다중 지점 미션
 - 알고리즘 비교
 
-시뮬레이션 실행 시 ROS 시간과 통신 영역을 실제 로봇 환경과 혼동하지 않도록 설정한다.
+시뮬레이션 실행 시 ROS 시간과 통신 영역을 실제 로봇 환경과 혼동하지 않도록 설정한다. 초기 UTM ARM64 환경에서는 Gazebo Harmonic 기본 월드와 RViz2 GUI 실행만 확인했으며, 가상 TurtleBot3·Nav2 통합 주행은 미검증 상태다. 비가속 llvmpipe 렌더링에서 동작했지만 GPU 가속 VirGL 환경은 불안정했다.
 
 ### 3.3. REAL
 
@@ -174,6 +175,19 @@ SIM에서는 `/clock` 기반 사용을 검토하고, REAL에서는 실차 시스
 MOCK / SIM / REAL별 실행 Launch·설정 파일을 구분한다.
 
 환경별 차이가 불필요하게 Mission Manager의 비즈니스 로직으로 확산되지 않도록 한다.
+
+### 4.4. TurtleBot3 Jazzy 전환 사전 점검
+
+[미확인 — 실차에서 검증 필요]
+
+- Raspberry Pi 등 실제 컴퓨팅 보드 모델 및 CPU 아키텍처 확인
+- 기존 로봇 OS, ROS2·드라이버 버전 및 설정 백업
+- Ubuntu 24.04 및 ROS2 Jazzy 지원 여부와 설치 경로 검증
+- TurtleBot3 패키지·LiDAR·카메라·Odometry·IMU 드라이버 호환성 확인
+- OpenCR 펌웨어와 모터 제어·정지 기능 호환성 확인
+- 개발 PC·실차의 ROS2 배포판 및 DDS 통신 설정 일치 여부 확인
+
+기존 실차 OS 재설치나 OpenCR 펌웨어 변경은 C·D가 복구 가능성을 확인한 뒤 담당자 간 조율하여 진행한다. 개발 VM의 Jazzy 설치 성공만으로 실차 전환이 완료된 것으로 보지 않는다.
 
 ---
 
@@ -609,6 +623,9 @@ TF, 위치 추정, Lifecycle, Controller 및 구동 경로까지 확인한 후 �
 
 ## 13. 현재 미확인 사항
 
+- [ ] TurtleBot3 컴퓨팅 보드 모델 및 CPU 아키텍처
+- [ ] 기존 로봇 OS·ROS2 버전과 Jazzy 전환 가능 여부
+- [ ] OpenCR 펌웨어 및 센서 드라이버의 Jazzy 호환성
 - [ ] 실제 로봇 IP 및 ROS_DOMAIN_ID
 - [ ] 센서 종류 및 실제 드라이버 버전
 - [ ] 필수 Topic 및 TF Frame

@@ -3,11 +3,14 @@
 > **문서 상태:** 최종 기획 제안서 기반 요구사항 요약  
 > **기준 문서:** `docs/reference/ORIGINAL_PROPOSAL.md`  
 > **기준 개정일:** 2026-11-17  
-> **개발 단계:** P0 — 초기 아키텍처 설계 및 공통 개발 기반 구축
+> **개발환경 변경:** 팀 합의에 따라 Ubuntu 24.04 / ROS2 Jazzy 적용  
+> **개발 단계:** P0 — 아키텍처 v1.0 승인 및 공통 개발 기반 구축 준비
 
 본 문서는 SMART-LOGISTICS AMR의 핵심 요구사항, 구현 우선순위, 팀원별 책임과 검증 기준을 요약한 Product Requirements Document(PRD)이다.
 
-세부 기술 설명과 연구 방법은 `ORIGINAL_PROPOSAL.md`를 따른다. 본 문서에 없는 사항은 임의로 확정하지 않는다.
+세부 기술 설명과 연구 방법은 `ORIGINAL_PROPOSAL.md`를 따른다. 단, 최종 기획서 작성 이후 팀에서 합의한 개발환경 변경은 `docs/DECISIONS.md`에 기록하여 적용한다.
+
+본 문서에 없는 기능이나 세부 구현 사항은 임의로 확정하지 않는다.
 
 ---
 
@@ -23,13 +26,18 @@
 | 개발 기간 | 2026년 11월 ~ 2027년 1월 |
 | 최종 발표 | 2027-01-15 |
 | 로봇 | TurtleBot3 Waffle Pi 1대 |
-| 운영체제 | Ubuntu 22.04 |
-| ROS | ROS2 Humble |
+| 운영체제 | Ubuntu 24.04 LTS |
+| ROS | ROS2 Jazzy Jalisco |
+| Python | 3.12 / rclpy |
 | 자율주행 | Nav2, AMCL |
+| 시뮬레이터 | Gazebo Harmonic |
+| ROS2·Gazebo 연동 | ros_gz |
 | 백엔드 | FastAPI |
 | 데이터베이스 | SQLite |
 | 시연 장소 | 기존 교육 강의실 |
 | 추가 예산 | 50,000원 이내 |
+
+개발 PC의 Ubuntu 24.04 / ROS2 Jazzy 환경은 기본 설치 및 동작 검증을 완료했다. 실제 TurtleBot3의 운영체제, 드라이버, 펌웨어 및 센서 호환성은 별도 검증 대상이다.
 
 ### 1.2. 프로젝트 목표
 
@@ -292,18 +300,52 @@ HOME을 제외한 4개 지점을 각각 한 번 방문하는 시나리오를 우
 
 ### 7.1. 개발환경
 
-- Ubuntu 22.04
-- ROS2 Humble
-- Python / rclpy
+**공식 개발 기준**
+
+- Ubuntu 24.04 LTS
+- ROS2 Jazzy Jalisco
+- Python 3.12 / rclpy
 - Nav2 / AMCL
+- Gazebo Harmonic / ros_gz
 - TurtleBot3 Waffle Pi
 - FastAPI / SQLite
 - HTML / CSS / JavaScript
 - LiDAR 및 필요 시 카메라
 
+기존 Ubuntu 22.04 / ROS2 Humble은 이전 개발환경이며, 본 프로젝트의 신규 구현 기준으로 사용하지 않는다.
+
+**개발환경 아키텍처**
+
+- 초기 개발 VM: Ubuntu 24.04 ARM64(aarch64), UTM 기반
+- 실제 TurtleBot3 컴퓨팅 보드: 장비 확인 후 지원 OS·아키텍처·ROS2 버전 검증
+- 팀원 개발 PC: 공통 ROS2 Jazzy 기준 준수
+- ROS2 통신: DDS 및 네트워크 설정을 실제 환경에서 확인
+
 실제 설치 버전, 센서 모델, ROS2 Topic과 Frame 명칭은 확인 후 기록한다.
 
-### 7.2. 구현 제외 범위
+개발 VM의 정상 동작을 실차의 호환성 검증 완료로 간주하지 않는다.
+
+### 7.2. 시뮬레이션 환경 제약
+
+Gazebo Harmonic을 기본 시뮬레이터로 사용한다.
+
+초기 UTM ARM64 환경에서 다음을 확인했다.
+
+- ROS2 Jazzy 및 Python rclpy 정상 동작
+- ROS2 Talker / Listener 통신 성공
+- colcon 기반 Python 패키지 생성·빌드·실행 성공
+- Gazebo Harmonic 기본 월드 실행 성공
+- RViz2 GUI 실행 성공
+
+다만 UTM에서 VirGL GPU 가속 적용 시 Gazebo·RViz2 그래픽 문제가 발생했다.
+
+CPU 기반 `llvmpipe` 렌더링에서는 기본 GUI 실행이 가능했지만, Gazebo 구동 중 CPU 사용량과 발열이 크게 증가했다.
+
+따라서 복잡한 시뮬레이션의 장시간 실행 가능 여부는 추가 검증하며, 필요 시 Headless 실행이나 별도 Ubuntu 개발 장비를 활용한다.
+
+이는 초기 개발 VM에서 확인된 제약이며, 다른 개발환경에 동일하게 적용되는 것은 아니다.
+
+### 7.3. 구현 제외 범위
 
 - 지점별 IoT 장치
 - ESP32·Arduino 기반 별도 시설 제어
@@ -313,7 +355,7 @@ HOME을 제외한 4개 지점을 각각 한 번 방문하는 시나리오를 우
 - 다중 로봇 운영 및 교통 관제
 - 별도의 복잡한 WMS 구축
 
-### 7.3. 승인된 기본 패키지 구성
+### 7.4. 승인된 기본 패키지 구성
 
 | 패키지 또는 영역 | 담당 |
 |---|---|
@@ -336,7 +378,7 @@ HOME을 제외한 4개 지점을 각각 한 번 방문하는 시나리오를 우
 | 환경 | 목적 |
 |---|---|
 | MOCK | 상태 머신과 모듈 계약 검증 |
-| SIM | Gazebo 기반 자율주행·통합 검증 |
+| SIM | Gazebo Harmonic 기반 자율주행·통합 검증 |
 | REAL | 실제 TurtleBot3 주행 검증 |
 
 `use_sim_time`은 시간 기준 설정이며, 실행 환경 자체를 격리하지 않는다.
@@ -363,6 +405,23 @@ HOME을 제외한 4개 지점을 각각 한 번 방문하는 시나리오를 우
 필수 준비 항목은 PASS / FAIL / UNKNOWN으로 구분하고, FAIL 또는 UNKNOWN 상태에서 자동 주행을 허용하지 않는 구조를 검토한다.
 
 실제 안전 정지 및 복구 절차는 로봇 하드웨어의 지원 여부를 확인하고 검증한다.
+
+### 8.4. TurtleBot3 Jazzy 전환 검증
+
+실제 TurtleBot3의 Jazzy 전환은 개발 VM 구성과 별도 작업으로 관리한다.
+
+다음 항목을 확인한다.
+
+1. Raspberry Pi 및 기타 제어 보드의 정확한 모델
+2. Raspberry Pi에 적용할 운영체제와 CPU 아키텍처
+3. TurtleBot3 관련 ROS2 Jazzy 패키지·드라이버 지원 여부
+4. OpenCR 펌웨어 및 모터 제어 호환성
+5. LiDAR·카메라 등 센서 드라이버 호환성
+6. 개발 PC와 로봇 간 DDS 통신 및 네트워크 설정
+7. TF, Odometry, 센서 토픽 및 기본 주행 검증
+8. Nav2·AMCL 실차 주행 검증
+
+실차 OS 재설치나 펌웨어 변경은 백업 및 복구 가능성을 확인한 뒤 담당자 간 합의하여 수행한다.
 
 ---
 
@@ -396,6 +455,7 @@ HOME을 제외한 4개 지점을 각각 한 번 방문하는 시나리오를 우
 - 실제 Waypoint 좌표 및 목표 방향
 - 물리적 작업 지점과 바스켓 규격
 - 실물 센서·드라이버·Topic 및 TF 구성
+- TurtleBot3의 Jazzy 호환성 및 OpenCR 펌웨어 구성
 - Nav2 Planner·Controller 설정과 안전 제한
 - 웹↔ROS2 연동 방식
 - Job·TaskStep·RoutePlan의 정확한 필드 및 상태 전이
@@ -418,6 +478,10 @@ HOME을 제외한 4개 지점을 각각 한 번 방문하는 시나리오를 우
 
 `docs/reference/ORIGINAL_PROPOSAL.md`
 
+**승인된 기술 변경**
+
+`docs/DECISIONS.md` — 최종 기획서 이후 팀에서 승인한 개발환경 및 기술 결정
+
 **본 문서**
 
 `docs/PRD.md` — 최종 제안서의 핵심 요구사항 요약
@@ -427,10 +491,9 @@ HOME을 제외한 4개 지점을 각각 한 번 방문하는 시나리오를 우
 - `docs/ARCHITECTURE.md` — ROS2 패키지 및 시스템 구조
 - `docs/INTERFACES.md` — 공통 데이터와 모듈 통신 계약
 - `docs/SIM_TO_REAL.md` — 실차 환경 차이 및 검증 절차
-- `docs/DECISIONS.md` — 팀 합의 및 확정된 기술 결정
 
 `ARCHITECTURE.md`의 패키지 구조·역할·모듈 경계는 승인된 기준이다. `INTERFACES.md`의 세부 통신 방식과 실제 장비에 의존하는 설정은 미확정 항목을 구분하여 관리한다.
 
-PRD와 최종 기획서가 충돌할 경우 최종 기획서를 기준으로 차이를 검토하고 PRD를 갱신한다.
+PRD와 최종 기획서가 충돌할 경우 최종 기획서를 기준으로 차이를 검토한다. 단, 이후 승인된 개발환경 변경사항은 해당 결정 기록을 근거로 적용한다.
 
 **개발 원칙: P0 기능의 실제 로봇 통합과 검증을 우선하며, 실험으로 확인되지 않은 성능이나 구현 상태를 확정된 사실로 표현하지 않는다.**

@@ -5,6 +5,7 @@
 > **문서 상태:** 승인된 초기 아키텍처 설계 v1.0
 > **승인권자:** A — 윤현수 (팀장)
 > **기획 기준:** 2026.11.17. 최종 기획 제안서
+> **공통 개발 기준:** Ubuntu 24.04 LTS / ROS2 Jazzy / Nav2 / Gazebo Harmonic
 > **기술 세부사항:** 실제 환경 검증 결과에 따라 변경 가능
 
 본 문서는 ROS2 기반 물류 AMR 시스템의 권장 패키지 구조, 모듈 책임, 데이터 흐름 및 통합 경계를 정의하기 위한 초기 설계 작업지이다.
@@ -180,7 +181,7 @@ B의 전역 경로 탐색 비교 코드는 우선 Nav2 플래너 설정과 별�
 **책임**
 
 - TurtleBot3 하드웨어 상태 확인
-- ROS2 Humble 및 로봇 기본 실행환경
+- ROS2 Jazzy 및 로봇 기본 실행환경 (실차 호환성 별도 검증)
 - LiDAR·카메라·Odometry·IMU 등 실제 장착 장비 구동
 - 센서 드라이버 및 기본 TF
 - 통신·DDS·ROS_DOMAIN_ID 환경
@@ -222,7 +223,7 @@ B는 전역 경로 탐색 알고리즘의 성능 비교와 선정 근거를 담�
 - A*
 - Dijkstra
 
-우선 Nav2 Humble의 NavFn Planner 및 `use_astar` 설정을 이용한 비교 가능성을 검토한다.
+우선 Nav2 Jazzy의 NavFn Planner(`nav2_navfn_planner::NavfnPlanner`)와 `use_astar` 설정을 이용한 비교 가능성을 검토한다. `use_astar: true`는 A*, `false`는 Dijkstra 방식이다.
 
 **주요 산출물**
 
@@ -392,10 +393,12 @@ C의 Bringup은 실제 로봇 구동을 위한 기반 환경이다. 최적화 �
 ### 9.1. 실행 환경
 
 - **MOCK:** 로봇 없이 상태 머신·계획 계산·웹 연동 검증
-- **SIM:** Gazebo와 Nav2 기반 시뮬레이션 검증
+- **SIM:** Gazebo Harmonic과 ROS2 Jazzy·Nav2 기반 시뮬레이션 검증
 - **REAL:** 실제 TurtleBot3 센서·위치 추정·주행 검증
 
 실행 환경별 Launch·설정 및 ROS2 통신 환경을 구분한다.
+
+초기 개발 PC의 Ubuntu 24.04 ARM64 UTM 가상머신에서 ROS2 Jazzy 기본 통신·빌드 및 Gazebo Harmonic·RViz2 기본 GUI 실행을 확인했다. 이는 TurtleBot3 실차의 운영체제·드라이버·펌웨어 호환성이나 Nav2 실차 주행을 검증한 결과가 아니다.
 
 `use_sim_time`은 시간 기준 설정이며 실행 환경을 격리하지 않는다.
 
@@ -459,6 +462,7 @@ C의 Bringup은 실제 로봇 구동을 위한 기반 환경이다. 최적화 �
 - [ ] E↔ROS2 연동 방식
 - [ ] 실제 Topic·Service·Action 이름과 QoS
 - [ ] Plan Version·중복 요청·Timeout 처리 방식
+- [ ] TurtleBot3 컴퓨팅 보드 OS·아키텍처·센서 드라이버·OpenCR 펌웨어의 Jazzy 호환성
 - [ ] 실제 장비 설정 및 실차 검증 결과
 
 승인된 구조는 개발 기준으로 유지한다.
@@ -479,7 +483,7 @@ C의 Bringup은 실제 로봇 구동을 위한 기반 환경이다. 최적화 �
 | `docs/SIM_TO_REAL.md` | 실차 검증 및 안전 기준 |
 | `docs/DECISIONS.md` | 팀 합의·설계 승인 기록 |
 
-최종 기획서와 충돌하는 설계 내용은 팀 합의 없이 확정하지 않는다.
+최종 기획서와 충돌하는 설계 내용은 팀 합의 없이 확정하지 않는다. 단, 이후 승인된 ROS2 Jazzy 개발환경 전환은 `docs/DECISIONS.md`의 결정 기록을 따른다.
 
 ---
 
@@ -494,5 +498,6 @@ C의 Bringup은 실제 로봇 구동을 위한 기반 환경이다. 최적화 �
   - E: 웹 관제·데이터
   - 계획 경로 비용과 실제 주행 데이터 분리
   - 기본 동적 재계획 P0 반영
+- **2026-11-17:** 팀 합의에 따른 Ubuntu 24.04 / ROS2 Jazzy / Gazebo Harmonic 개발환경 전환 반영 (아키텍처 v1.0 유지)
 
 **현재 상태: 초기 아키텍처 v1.0 승인. 패키지 구조·역할·모듈 경계는 확정되었으며, 구체적인 Topic·Service·Action 및 메시지 필드 등 세부 구현 계약은 별도 결정한다.**

@@ -8,7 +8,7 @@
 
 ## 1. Task — 작업 목표
 
-너는 ROS2 Humble·Nav2 기반 물류 AMR 시스템의 수석 시스템 아키텍트이자 통합 검증 전문가다.
+너는 Ubuntu 24.04 / ROS2 Jazzy·Nav2 기반 물류 AMR 시스템의 수석 시스템 아키텍트이자 통합 검증 전문가다.
 
 프로젝트명은 **SMART-LOGISTICS AMR**이다.
 
@@ -47,7 +47,7 @@
 
 `ORIGINAL_PROPOSAL.md`는 실제 최종 기획서로 교체된 상태다. 더 이상 재구성본이나 원문 미확보 상태로 취급하지 않는다.
 
-`CODEX_FULL_BRIEF.md`와 이전 프로젝트 자료에 과거 역할 분담이나 상충하는 지시가 남아 있다면 최종 기획서와 승인된 아키텍처를 우선한다.
+`CODEX_FULL_BRIEF.md`와 이전 프로젝트 자료에 과거 역할 분담이나 상충하는 지시가 남아 있다면 최종 기획서와 승인된 아키텍처를 우선한다. 단, 기획서 이후 팀에서 승인한 Humble → Jazzy 개발환경 변경은 `docs/DECISIONS.md`의 해당 결정에 따른다.
 
 문서 충돌이 발생하면 실제 파일을 임의 수정하지 말고 충돌 내용과 수정 권고를 보고한다.
 
@@ -68,7 +68,7 @@ B의 전역 경로 탐색, C의 방문 순서 최적화, D의 로컬 주행 제�
 ### 2.3. 확정된 개발 방향
 
 - TurtleBot3 Waffle Pi 1대 사용
-- Ubuntu 22.04 / ROS2 Humble / Nav2
+- Ubuntu 24.04 LTS / ROS2 Jazzy / Nav2 / Gazebo Harmonic
 - HOME 및 작업 지점 A~D 구성
 - 작업자 수동 물품 인계
 - Job·TaskStep·Waypoint 분리
@@ -76,6 +76,7 @@ B의 전역 경로 탐색, C의 방문 순서 최적화, D의 로컬 주행 제�
 - 실제 주행 데이터 기반 검증
 - 기본 동적 재계획은 P0 필수
 - 재계획 계산은 C, 실행 적용은 A
+- TurtleBot3 실차의 OS·드라이버·OpenCR 펌웨어 Jazzy 호환성은 검증 전 항목으로 유지
 - 2027.01.15 최종 발표
 
 ---

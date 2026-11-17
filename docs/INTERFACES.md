@@ -5,7 +5,8 @@
 > **최종 승인권자:** A — 윤현수 (팀장)  
 > **최상위 요구사항:** `docs/reference/ORIGINAL_PROPOSAL.md`  
 > **관련 문서:** `docs/PRD.md`, `docs/ARCHITECTURE.md`  
-> **기준일:** 2026-11-17
+> **기준일:** 2026-11-17  
+> **공통 개발 기준:** ROS2 Jazzy / Nav2 (Ubuntu 24.04)
 
 본 문서는 SMART-LOGISTICS AMR에서 팀원별 모듈 간 정보 교환, 데이터 소유권, 상태 전이 및 오류 처리의 공통 기준을 정의한다.
 
@@ -21,7 +22,7 @@
 
 ## 1. 인터페이스 설계 원칙
 
-1. ROS2 Humble·Nav2 표준 인터페이스를 우선 사용한다.
+1. ROS2 Jazzy·Nav2 표준 인터페이스를 우선 사용한다.
 2. 불필요한 사용자 정의 Topic·Service·Action을 추가하지 않는다.
 3. Job, TaskStep, Waypoint, Mission의 ID와 상태를 구분한다.
 4. 모든 작업 완료 판정은 Mission Manager가 수행한다.
@@ -474,7 +475,7 @@ C의 `route_optimizer`는 D가 운영하는 Nav2 Planner 환경에서 계획 경
 
 고정 지점 사이의 비용 계산에서는 명시적인 시작 Pose를 사용하도록 `use_start` 설정을 확인한다.
 
-실제 Action의 Goal 필드 형식과 지원 여부는 ROS2 Humble 환경에서 확인한다.
+ROS2 Jazzy의 `nav2_msgs/action/ComputePathToPose`에는 `goal`, `start`, `planner_id`, `use_start` Goal 필드가 있다. 명시적 시작 Pose로 지점 간 비용을 계산할 때 `start`와 `use_start: true`를 사용하며, 실행 서버·플래너 ID의 실제 가용성은 개발환경에서 확인한다.
 
 ### 8.3. 계산 결과
 
@@ -605,7 +606,7 @@ A가 관리하는 다음 정보를 제공한다.
 
 선정 기준:
 
-- ROS2 Humble 호환성
+- ROS2 Jazzy 호환성
 - 비동기 이벤트 처리
 - 상태 전송 지연
 - 배포와 실행 절차
@@ -699,7 +700,7 @@ P0에서는 계산 실패·주행 실패·인계 지연이 발생해도 상태�
 
 ### SIM
 
-- Gazebo 및 Nav2 시뮬레이션 사용
+- Gazebo Harmonic 및 ROS2 Jazzy·Nav2 시뮬레이션 사용
 - 경로 계산과 주행 기능 검증
 - 시뮬레이션 데이터로 실행 결과 기록
 
@@ -750,7 +751,7 @@ SIM과 REAL의 통신 및 실행 환경이 혼합되지 않도록 별도 검증�
 - [ ] 비용표 저장·무효화·재계산 규칙
 - [ ] ROS2 QoS와 상태 갱신 주기
 - [ ] Timeout·Retry·Cancel 세부 정책
-- [ ] 실제 로봇의 센서 Topic·TF·Nav2 Action 가용성
+- [ ] 실제 로봇의 센서 Topic·TF·Nav2 Action 가용성 및 TurtleBot3 Jazzy 드라이버 호환성
 
 세부 인터페이스 확정 및 변경의 최종 승인권자는 A 담당 윤현수다.
 
@@ -771,6 +772,7 @@ SIM과 REAL의 통신 및 실행 환경이 혼합되지 않도록 별도 검증�
 
 **2026-11-17 — 인터페이스 문서 개정**
 
+- Ubuntu 24.04 / ROS2 Jazzy 기준과 `ComputePathToPose` Goal 필드 확인 사항 반영
 - A~E 최신 역할 분담 반영
 - A↔C 방문 순서 최적화 계약 정리
 - A↔D Nav2 주행 계약 정리
