@@ -1,10 +1,11 @@
 # SMART-LOGISTICS AMR — Codex Full Brief
 
-> **문서 상태:** 공통 개발 참조 브리프 v1.1  
+> **문서 상태:** 공통 개발 참조 브리프 v1.2  
 > **기획 기준:** 2026-11-17 최종 기획 제안서  
 > **아키텍처:** v1.0 승인  
 > **최종 승인권자:** A — 윤현수 (팀장)  
-> **개발 단계:** P0 — 기본 시스템 구현 준비 및 실차 검증  
+> **개발환경 기준:** Ubuntu 24.04 LTS / ROS2 Jazzy / Gazebo Harmonic  
+> **개발 단계:** P0 — 공통 개발 기반 구축 및 실차 검증 준비  
 > **최종 발표:** 2027-01-15
 
 ## 1. 문서 목적
@@ -21,10 +22,10 @@
 4. `docs/ARCHITECTURE.md` — 승인된 시스템 구조
 5. `docs/INTERFACES.md` — 모듈 간 통신 계약
 6. `docs/SIM_TO_REAL.md` — 실차 검증 기준
-7. `docs/DECISIONS.md` — 승인된 기술 결정
+7. `docs/DECISIONS.md` — 승인된 기술 결정 및 변경 이력
 8. 본 문서 — 추가 개발 맥락
 
-본 문서가 상위 문서와 충돌하면 상위 문서를 따른다.
+본 문서가 상위 문서와 충돌하면 상위 문서를 따른다. 단, 최종 기획 제안서 이후 승인된 개발환경 변경은 `docs/DECISIONS.md`의 해당 결정을 따른다.
 
 Codex는 매 작업에서 이 문서 전체를 읽을 필요가 없다. 상세한 프로젝트 배경이나 시스템 전체 맥락이 필요한 작업에서 선택적으로 참조한다.
 
@@ -52,22 +53,49 @@ Codex는 매 작업에서 이 문서 전체를 읽을 필요가 없다. 상세�
 | 영역 | 기술 |
 |---|---|
 | 로봇 | TurtleBot3 Waffle Pi |
-| OS | Ubuntu 22.04 |
-| ROS2 | Humble |
+| OS | Ubuntu 24.04 LTS |
+| ROS2 | Jazzy Jalisco |
 | Navigation | Nav2, AMCL |
-| 언어 | Python, rclpy |
+| 언어 | Python 3.12, rclpy |
 | Backend | FastAPI |
 | Database | SQLite |
 | Frontend | HTML, CSS, JavaScript |
 | 센서 | LiDAR, 필요 시 카메라 |
-| 시뮬레이션 | Gazebo |
+| 시뮬레이션 | Gazebo Harmonic |
+| 시뮬레이터 연동 | ros_gz |
 | 협업 | GitHub Monorepo |
 
 시연 장소는 기존 교육 강의실이며 실차 로봇은 1대다.
 
 추가 예산은 50,000원 이내다.
 
+기존 Ubuntu 22.04 / ROS2 Humble은 이전 개발 기준이며, 신규 구현은 Ubuntu 24.04 / ROS2 Jazzy를 따른다.
+
 실제 설치된 패키지, 센서와 네트워크 구성은 해당 장비에서 확인해야 한다.
+
+### 개발 플랫폼 및 원격 작업환경
+
+초기 개발환경은 다음과 같다.
+
+- **Host:** macOS, Apple Silicon M2
+- **가상화:** UTM / QEMU
+- **Guest:** Ubuntu 24.04 ARM64(aarch64)
+- **ROS2:** Jazzy
+- **Python:** 3.12
+- **시뮬레이터:** Gazebo Harmonic
+- **개발 도구:** VS Code, Codex Desktop, Codex CLI
+- **SSH 호스트 별칭:** `ros2-jazzy`
+- **원격 프로젝트 경로:** `/home/hyunsu/Desktop/Dev/SMART-LOGISTICS-AMR`
+
+Mac의 Codex Desktop에서 SSH로 Ubuntu VM에 접속하여 원격 프로젝트를 개발할 수 있다.
+
+이 구성에서 실제 ROS2 패키지 수정, 빌드 및 테스트는 Ubuntu 환경에서 수행한다. Mac의 로컬 복사본과 VM의 저장소는 별개이며 자동 동기화되지 않는다.
+
+초기 VM에서 ROS2 통신, Python 노드 실행, colcon 빌드, RViz2 및 Gazebo 기본 GUI 실행을 확인했다.
+
+단, UTM의 VirGL GPU 가속에서 Gazebo·RViz2 그래픽 문제가 발생하여 현재는 소프트웨어 렌더링 환경을 사용한다. Gazebo 구동 시 CPU 사용량과 발열이 크므로 불필요한 GUI 실행을 피한다.
+
+실제 TurtleBot3의 Jazzy 호환성, 센서 드라이버 및 OpenCR 펌웨어 구성은 별도 검증 대상이다.
 
 ---
 
@@ -182,7 +210,7 @@ C의 하드웨어·Bringup과 물류 최적화는 서로 다른 소프트웨어 
 - 경로 생성 성공률
 - 실차 주행 검증 결과
 
-Nav2 Humble의 NavFn Planner를 이용한 비교를 우선 검토한다.
+Nav2 Jazzy의 NavFn Planner를 이용한 비교를 우선 검토한다.
 
 최종 플래너 선정 결과는 C·D에게 공유한다.
 
@@ -293,7 +321,7 @@ P1·P2가 P0 전체 미션을 차단하지 않도록 한다.
 | 모드 | 목적 |
 |---|---|
 | MOCK | 상태 머신과 인터페이스 검증 |
-| SIM | Gazebo 기반 주행 검증 |
+| SIM | Gazebo Harmonic 기반 주행 검증 |
 | REAL | 실제 TurtleBot3 주행 검증 |
 
 `use_sim_time`은 시간 기준 설정이며, DDS 통신환경 격리의 대체 수단이 아니다.
@@ -323,6 +351,21 @@ Gate의 실제 PASS 여부는 실차 시험과 증빙을 통해 확인한다.
 
 이전 프로젝트에서 발생한 문제를 현재 프로젝트에서 이미 발생한 오류로 단정하지 않는다.
 
+### Jazzy 실차 전환 확인 사항
+
+실차의 ROS2 Jazzy 적용 전 다음을 확인한다.
+
+- TurtleBot3 컴퓨팅 보드 모델 및 아키텍처
+- 실제 로봇에 적용할 Ubuntu 버전
+- TurtleBot3 Jazzy 패키지 및 드라이버 지원
+- OpenCR 펌웨어와 모터 구동 호환성
+- LiDAR·카메라 등 센서 드라이버
+- 개발 PC와 로봇 간 DDS 통신
+- TF·Odometry·AMCL·Nav2 실행 상태
+- 안전 정지와 복구 절차
+
+실차 OS 또는 펌웨어 변경은 백업 및 복구 방법을 확인하고 담당자 간 합의한 뒤 수행한다.
+
 ---
 
 ## 10. 인터페이스 및 데이터 관리
@@ -334,6 +377,7 @@ Gate의 실제 PASS 여부는 실차 시험과 증빙을 통해 확인한다.
 - B는 전역 플래너 선정 기준을 제공한다.
 - 실험 결과는 우선 JSON·CSV·SQLite에서 관리한다.
 - 공통 ROS2 메시지는 필요한 경우에만 추가한다.
+- ROS2 Jazzy·Nav2 표준 인터페이스를 우선 재사용한다.
 - 센서 Topic은 실제 Publisher와의 QoS 호환성을 우선한다.
 - 상태 정보의 Reliable·Transient Local 사용 여부는 데이터 특성에 따라 결정한다.
 - 요청 타임아웃·중복 처리·재시도·취소 정책은 실험과 환경 확인 후 구체화한다.
@@ -374,6 +418,7 @@ Gate의 실제 PASS 여부는 실차 시험과 증빙을 통해 확인한다.
 3. 승인된 아키텍처와 기술 결정을 확인한다.
 4. 실제 환경에서 확인하지 못한 사항을 구분한다.
 5. 영향을 받는 담당자와 인터페이스를 식별한다.
+6. SSH 원격 작업 시 Ubuntu 프로젝트 경로와 ROS2 실행환경을 확인한다.
 
 ### 개발 중
 
@@ -384,6 +429,8 @@ Gate의 실제 PASS 여부는 실차 시험과 증빙을 통해 확인한다.
 - 공통 인터페이스 변경은 A의 승인을 받는다.
 - 실제 측정값을 생성하거나 추측하지 않는다.
 - 구현된 기능과 미구현 기능을 구분한다.
+- Mac 로컬 저장소와 Ubuntu 원격 저장소를 혼동하지 않는다.
+- ROS2 패키지의 빌드와 테스트는 Jazzy 환경에서 수행한다.
 
 ### 검증 후
 
