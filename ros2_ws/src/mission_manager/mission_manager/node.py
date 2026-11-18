@@ -158,9 +158,8 @@ class MissionManager(Node):
         if not all(isinstance(value, str) and value.strip()
                    for value in (event_id, mission_id, step_id)):
             raise ValueError('event_id, mission_id and step_id must be nonempty strings')
-        previous_step = self.state.current
-        outcome = self.state.handoff(event_id, mission_id, step_id)
-        if previous_step and outcome == 'accepted' and self.state.current is None and self.candidate is not None:
+        outcome, completed_now = self.state.handoff_transition(event_id, mission_id, step_id)
+        if completed_now and self.candidate is not None:
             self._apply_candidate()
         return outcome
 

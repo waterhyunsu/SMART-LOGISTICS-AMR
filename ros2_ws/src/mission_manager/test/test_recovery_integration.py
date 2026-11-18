@@ -131,3 +131,38 @@ def test_invalid_event_ids_do_not_change_ledger(database, ids):
         with pytest.raises(ValueError):
             node.handoff(*ids)
         assert set(node.state.handoff_results) == {'early'}
+
+
+@pytest.mark.parametrize('next_started', [False, True])
+def test_accepted_replay_preserves_deferred_candidate(database, next_started):
+    with manager(database) as node:
+        assert FakeNavigation(node).observe(NavigationObservation.ARRIVED)
+        assert FakeWeb(node).send('done', drop_ack=True) == 'accepted'
+
+    with manager(database) as node:
+        state = node.state
+        if next_started:
+            assert state.start_next() == 'one-d'
+        candidate = mock_optimizer(state.request('HOME', 'r1'))
+        assert state.valid_candidate(candidate)
+        node.candidate = candidate
+        node.plan_status = 'deferred'
+        revision = state.revision
+
+        web = FakeWeb(node)
+        assert web.send('done') == 'accepted'
+        assert web.acks == ['accepted']
+        assert node.candidate is candidate and node.plan_status == 'deferred'
+        assert state.revision == revision and state.active_version == 1
+        assert state.completed == {'one-p'}
+        assert state.current == ('one-d' if next_started else None)
+
+
+def test_handoff_transition_reports_only_new_durable_completion(database):
+    with manager(database) as node:
+        assert FakeNavigation(node).observe(NavigationObservation.ARRIVED)
+        state = node.state
+        args = ('done', state.mission_id, 'one-p')
+        assert state.handoff_transition(*args) == ('accepted', True)
+        assert state.handoff_transition(*args) == ('accepted', False)
+        assert state.handoff_transition('done', state.mission_id, 'one-d') == ('conflict', False)
