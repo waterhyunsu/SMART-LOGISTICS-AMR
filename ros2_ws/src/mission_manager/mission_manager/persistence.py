@@ -3,6 +3,7 @@
 from copy import deepcopy
 import json
 import sqlite3
+from uuid import uuid4
 
 from logistics_msgs.msg import TaskStep
 from mission_manager.contract import MissionState
@@ -48,6 +49,7 @@ class PersistentMission:
             raise ValueError('unsupported mission snapshot schema')
         # Existing schema-1 snapshots did not track the final verified waypoint.
         values.setdefault('home_status', 'away')
+        values.setdefault('attempt_id', None)
         steps = [TaskStep(**step) for step in values['steps']]
         state = MissionState(values['mission_id'], steps)
         if set(values) != set(state.__dict__):
@@ -90,6 +92,11 @@ class PersistentMission:
         if values['home_status'] == 'returning' and (
                 not state.steps or completed != state.steps.keys()):
             raise ValueError('HOME return with unfinished steps')
+        attempt_id = values['attempt_id']
+        if attempt_id is not None and (
+                not isinstance(attempt_id, str) or not attempt_id.strip()
+                or (current is None and values['home_status'] != 'returning')):
+            raise ValueError('invalid execution attempt')
         events = values['handoff_results']
         if not isinstance(events, dict):
             raise ValueError('invalid event ledger')
@@ -164,6 +171,16 @@ class PersistentMission:
             candidate.waiting = arrived
         elif arrived:
             candidate.arrive_home()
+        self._commit(candidate)
+        self.recovery_required = not arrived
+
+    def _commit_recovery_retry(self, previous_attempt_id):
+        """Persist a new attempt after the A boundary authorizes retry."""
+        if (not self.recovery_required or self._state.waiting
+                or self._state.attempt_id != previous_attempt_id):
+            raise ValueError('no matching recoverable execution attempt')
+        candidate = deepcopy(self._state)
+        candidate.attempt_id = uuid4().hex
         self._commit(candidate)
         self.recovery_required = False
 

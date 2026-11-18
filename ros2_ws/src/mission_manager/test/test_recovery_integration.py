@@ -74,10 +74,16 @@ def test_verified_observation_only_reconciles(database, outcome, waiting):
         assert e.send('early') == 'rejected'
         assert d.observe(outcome)
         assert d.targets[0].waypoint_id == 'A'
-        assert not node.state.recovery_required and node.state.waiting is waiting
+        assert node.state.recovery_required is not waiting
+        assert node.state.waiting is waiting
         assert not node.state.completed and node.state.current == 'one-p'
         assert node.request is None and node.state.active_version == 1
-        assert e.send('new') == ('accepted' if waiting else 'rejected')
+        if waiting:
+            assert e.send('new') == 'accepted'
+        else:
+            with pytest.raises(RecoveryPending):
+                e.send('new')
+            assert node.claim_next_goal() is None
 
 
 @pytest.mark.parametrize('outcome', [

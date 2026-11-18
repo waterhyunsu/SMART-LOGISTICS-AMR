@@ -22,6 +22,7 @@ from mission_manager.persistence import PersistentMission
 class NavigationObservation(Enum):
     ARRIVED = auto()
     NOT_ARRIVED = auto()
+    NO_ACTIVE_GOAL = auto()
     UNKNOWN = auto()
     DISCONNECTED = auto()
     TIMEOUT = auto()
@@ -34,6 +35,7 @@ class RecoveryCheck:
     step_id: str | None
     plan_version: int
     waypoint_id: str
+    attempt_id: str | None
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,7 @@ class NavigationGoal:
     step_id: str | None
     plan_version: int
     waypoint_id: str
+    attempt_id: str | None
 
 
 class MissionManager(Node):
@@ -60,6 +63,7 @@ class MissionManager(Node):
         self.future = None
         self.candidate = None
         self._recovery_check = None
+        self._retry_check = None
         self.plan_status = 'recovery_required' if self.state.recovery_required else 'idle'
         self.timer = self.create_timer(
             min(0.02, self.timeout), self._poll, clock=Clock(clock_type=ClockType.STEADY_TIME),
@@ -175,7 +179,8 @@ class MissionManager(Node):
             waypoint = 'HOME'
         else:
             return None
-        return NavigationGoal(self.state.mission_id, step_id, self.state.active_version, waypoint)
+        return NavigationGoal(self.state.mission_id, step_id, self.state.active_version,
+                              waypoint, self.state.attempt_id)
 
     def claim_next_goal(self):
         """Commit one logical dispatch before returning it to the D adapter."""
@@ -203,9 +208,11 @@ class MissionManager(Node):
         if not self.state.recovery_required:
             raise ValueError('no recovered step awaiting confirmation')
         goal = self.current_goal()
+        self._retry_check = None
         self._recovery_check = RecoveryCheck(
             check_id=uuid4().hex, mission_id=goal.mission_id, step_id=goal.step_id,
-            plan_version=goal.plan_version, waypoint_id=goal.waypoint_id)
+            plan_version=goal.plan_version, waypoint_id=goal.waypoint_id,
+            attempt_id=goal.attempt_id)
         return self._recovery_check
 
     def handle_recovery_observation(self, check, observation):
@@ -215,13 +222,25 @@ class MissionManager(Node):
             return False
         if not isinstance(observation, NavigationObservation):
             raise ValueError('expected a NavigationObservation')
-        if observation not in (NavigationObservation.ARRIVED, NavigationObservation.NOT_ARRIVED):
-            self._recovery_check = None
-            return False
-        self.state.reconcile(check.step_id, arrived=observation is NavigationObservation.ARRIVED)
+        if observation in (NavigationObservation.ARRIVED, NavigationObservation.NOT_ARRIVED):
+            self.state.reconcile(check.step_id, arrived=observation is NavigationObservation.ARRIVED)
         self._recovery_check = None
-        self.plan_status = 'applied' if self.state.active_version else 'idle'
-        return True
+        if observation is NavigationObservation.NO_ACTIVE_GOAL:
+            self._retry_check = check
+        if not self.state.recovery_required:
+            self.plan_status = 'applied' if self.state.active_version else 'idle'
+        return observation in (NavigationObservation.ARRIVED, NavigationObservation.NOT_ARRIVED,
+                               NavigationObservation.NO_ACTIVE_GOAL)
+
+    def approve_goal_retry(self, check):
+        """Authorize a single retry after D rules out the previous execution."""
+        if (not self.state.recovery_required or self.state.waiting
+                or self._retry_check is None or check != self._retry_check):
+            return None
+        self.state._commit_recovery_retry(check.attempt_id)
+        self._retry_check = None
+        self.plan_status = 'applied'
+        return self.current_goal()
 
     def arrive(self, step_id):
         return self.state.arrive(step_id)

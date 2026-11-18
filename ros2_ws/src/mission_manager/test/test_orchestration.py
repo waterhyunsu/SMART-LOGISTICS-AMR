@@ -1,5 +1,10 @@
+from dataclasses import replace
 import json
+import os
+from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 
 import pytest
 
@@ -155,3 +160,111 @@ def test_legacy_snapshot_recovers_without_assuming_home(tmp_path):
         assert goal.step_id is None and goal.waypoint_id == 'HOME'
         assert node.handle_navigation_observation(goal, NavigationObservation.ARRIVED)
         assert node.mission_status == 'completed'
+
+
+@pytest.mark.parametrize('target', ['step', 'home'])
+def test_restart_requires_fresh_absence_and_explicit_retry(tmp_path, target):
+    setup = """
+import os
+import sys
+from test_contract import mock_optimizer
+from test_dds import job
+from test_orchestration import complete_goal
+from test_recovery_integration import FakeWeb, manager
+from mission_manager.node import NavigationObservation
+
+with manager(sys.argv[1]) as node:
+    if sys.argv[3] == 'claim':
+        steps = job('one')
+        steps[-1].waypoint_id = 'B'
+        node.state.add_steps(steps)
+        assert node.state.apply(mock_optimizer(node.state.request('HOME', 'r1')))
+        if sys.argv[2] == 'home':
+            for _ in steps:
+                complete_goal(node, FakeWeb(node), node.claim_next_goal())
+        assert node.claim_next_goal()
+    else:
+        check = node.begin_recovery_check()
+        assert node.handle_recovery_observation(check, NavigationObservation.NO_ACTIVE_GOAL)
+        assert node.approve_goal_retry(check)
+    os._exit(0)
+"""
+    path = tmp_path / 'mission.sqlite'
+    environment = {**os.environ, 'PYTHONPATH': os.pathsep.join(
+        (str(Path(__file__).parent), os.environ.get('PYTHONPATH', '')))}
+    subprocess.run([sys.executable, '-c', setup, str(path), target, 'claim'],
+                   env=environment, check=True, timeout=15)
+    with manager(path) as node:
+        first = node.current_goal()
+        assert first.attempt_id and node.state.recovery_required
+        assert (first.step_id is None) == (target == 'home')
+    subprocess.run([sys.executable, '-c', setup, str(path), target, 'retry'],
+                   env=environment, check=True, timeout=15)
+    with manager(path) as node:
+        prior = node.current_goal()
+        assert prior.attempt_id != first.attempt_id and node.state.recovery_required
+        assert node.claim_next_goal() is None
+        for result in (NavigationObservation.NOT_ARRIVED, NavigationObservation.DISCONNECTED,
+                       NavigationObservation.TIMEOUT, NavigationObservation.UNKNOWN):
+            old = node.begin_recovery_check()
+            node.handle_recovery_observation(old, result)
+            assert node.state.recovery_required and node.claim_next_goal() is None
+            assert node.approve_goal_retry(old) is None
+            assert not node.handle_recovery_observation(old, NavigationObservation.ARRIVED)
+        check = node.begin_recovery_check()
+        for mismatch in (replace(check, mission_id='other'), replace(check, step_id='old'),
+                         replace(check, plan_version=0), replace(check, waypoint_id='other'),
+                         replace(check, attempt_id=first.attempt_id)):
+            assert not node.handle_recovery_observation(mismatch, NavigationObservation.NO_ACTIVE_GOAL)
+            assert node.approve_goal_retry(mismatch) is None
+        assert node.handle_recovery_observation(check, NavigationObservation.NO_ACTIVE_GOAL)
+        assert node.current_goal() == prior and node.claim_next_goal() is None
+        db = node.state.db
+        db.execute("CREATE TRIGGER fail BEFORE UPDATE ON mission BEGIN SELECT RAISE(ABORT, 'failure'); END")
+        with pytest.raises(sqlite3.DatabaseError):
+            node.approve_goal_retry(check)
+        assert node.current_goal() == prior and node.state.recovery_required
+        db.execute('DROP TRIGGER fail')
+        retry = node.approve_goal_retry(check)
+        assert retry.attempt_id not in (first.attempt_id, prior.attempt_id)
+        assert retry.step_id == prior.step_id and retry.plan_version == prior.plan_version
+        assert node.approve_goal_retry(check) is None and node.claim_next_goal() is None
+        for result in (NavigationObservation.ARRIVED, NavigationObservation.NOT_ARRIVED,
+                       NavigationObservation.TIMEOUT):
+            assert not node.handle_navigation_observation(prior, result)
+        if target == 'home':
+            assert node.handle_navigation_observation(retry, NavigationObservation.ARRIVED)
+            assert not node.handle_navigation_observation(retry, NavigationObservation.ARRIVED)
+            assert node.mission_status == 'completed'
+        else:
+            node.state.add_steps(job('new'))
+            candidate = mock_optimizer(node.state.request(retry.waypoint_id, 'r1'))
+            node.candidate = candidate
+            assert not node.handle_navigation_observation(prior, NavigationObservation.ARRIVED)
+            assert node.candidate is candidate and node.state.active_version == prior.plan_version
+            complete_goal(node, FakeWeb(node), retry)
+            assert FakeWeb(node).send('done:' + retry.step_id, retry.step_id) == 'accepted'
+            assert node.state.active_version == prior.plan_version + 1
+            assert node.claim_next_goal().step_id == 'one-d'
+
+
+def test_legacy_execution_requires_observation_and_waiting_step_cannot_retry(tmp_path):
+    path = tmp_path / 'legacy-active.sqlite'
+    with manager(path) as node:
+        node.state.add_steps(job('one'))
+        assert node.state.apply(mock_optimizer(node.state.request('HOME', 'r1')))
+        goal = node.claim_next_goal()
+        assert node.handle_navigation_observation(goal, NavigationObservation.ARRIVED)
+    with sqlite3.connect(path) as db:
+        snapshot = json.loads(db.execute('SELECT snapshot FROM mission').fetchone()[0])
+        del snapshot['attempt_id']
+        db.execute('UPDATE mission SET snapshot=?', (json.dumps(snapshot),))
+    with manager(path) as node:
+        check = node.begin_recovery_check()
+        assert check.attempt_id is None and node.approve_goal_retry(check) is None
+        assert node.handle_recovery_observation(check, NavigationObservation.NO_ACTIVE_GOAL)
+        assert node.approve_goal_retry(check) is None
+        assert node.state.waiting and node.state.recovery_required
+        check = node.begin_recovery_check()
+        assert node.handle_recovery_observation(check, NavigationObservation.ARRIVED)
+        assert FakeWeb(node).send('done') == 'accepted'
