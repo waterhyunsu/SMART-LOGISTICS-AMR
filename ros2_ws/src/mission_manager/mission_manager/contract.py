@@ -27,6 +27,7 @@ class MissionState:
         self.latest_request_id = 0
         self.home_status = 'away'
         self.attempt_id = None
+        self.nav_goal_id = None
 
     def add_steps(self, steps):
         """Register complete pickup/dropoff pairs atomically at order intake."""
@@ -125,6 +126,19 @@ class MissionState:
             return False
         self.home_status = 'returning'
         self.attempt_id = uuid4().hex
+        self.nav_goal_id = None
+        return True
+
+    def bind_nav_goal(self, attempt_id, nav_goal_id):
+        """Persist a stable Nav2 UUID for one current logical execution attempt."""
+        if (self.attempt_id is None or self.attempt_id != attempt_id
+                or (self.current is None and self.home_status != 'returning')
+                or self.waiting or self.nav_goal_id is not None):
+            raise ValueError('no unbound active execution attempt')
+        if (not isinstance(nav_goal_id, str) or len(nav_goal_id) != 32
+                or any(char not in '0123456789abcdef' for char in nav_goal_id)):
+            raise ValueError('Nav2 Goal ID must be 32 lowercase hexadecimal characters')
+        self.nav_goal_id = nav_goal_id
         return True
 
     def arrive_home(self):
@@ -132,12 +146,14 @@ class MissionState:
             return False
         self.home_status = 'home'
         self.attempt_id = None
+        self.nav_goal_id = None
         return True
 
     def start_next(self):
         if self.current is None and self.order:
             self.current = self.order.pop(0)
             self.attempt_id = uuid4().hex
+            self.nav_goal_id = None
         return self.current
 
     def arrive(self, step_id):
@@ -151,6 +167,7 @@ class MissionState:
             return False
         self.completed.add(step_id)
         self.attempt_id = None
+        self.nav_goal_id = None
         self.home_status = 'home' if self.steps[step_id].waypoint_id == 'HOME' else 'away'
         self.current = None
         self.waiting = False

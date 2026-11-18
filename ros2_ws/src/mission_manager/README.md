@@ -88,3 +88,49 @@ D 어댑터는 이전 Goal ID와 실행 컨텍스트를 대조해 기존 실행�
 실행 시도 ID는 최초 선점부터 SQLite에 저장된다. 새 시도를 승인하면 이전 시도의 주행 결과와 중복 승인은 반영되지 않는다. 새 확인을 시작하거나 노드를 재시작하면 이전 실행 부재 확인은 다시 받아야 한다. COMMIT 실패 시 기존 시도와 복구 제한이 유지된다. COMMIT 직후 종료하면 다음 노드는 새로 저장된 시도를 다시 확인한다. 시도 ID가 없는 이전 스냅샷은 기존 미션·단계·계획·Waypoint를 바탕으로 D가 이전 실행을 대조해야 하며, ID 누락만으로 실행 부재를 판정할 수 없다.
 
 실제 D 연결에서는 Nav2 Goal ID 매핑, 늦은 외부 전송의 배제, 명시적 승인 후 전송을 검증해야 한다. 위 MOCK 명령에 일반 TaskStep·HOME의 별도 프로세스 종료, 승인 직후 종료, DB 쓰기 실패, 중복 승인과 늦은 응답 검증이 포함된다.
+
+## A ↔ D Nav2 Goal UUID 경계 (MOCK)
+
+새로운 `mission_manager.navigation_boundary.NavigationDispatchBoundary`는 A가 선점한
+논리 목표의 `attempt_id`와 Nav2 Goal UUID(소문자 32자리 hex)를 연결한다.
+**실제 Nav2 Action Client/서버는 구현하지 않았다.**
+
+1. A에서 `claim_next_goal()`을 호출해 논리 목표를 선점한다.
+   `prepare_dispatch(goal)`는 시도 ID와 Nav2 Goal UUID를 기존 SQLite 스냅샷에
+   COMMIT한 뒤 `DispatchTicket(goal, nav_goal_id)`을 반환한다. COMMIT에 실패하면
+   티켓과 외부 전송은 발생하지 않는다.
+2. D 송신기는 `submit_once(ticket, sender)`로 **한 번만 호출**한다.
+   콜백 호출은 Nav2 수락·실행 성공의 증거가 아니다. 송신 불명확·응답 유실 시
+   동일 목표를 무조건 재발행하지 않고 복구 확인 절차를 사용한다.
+3. D는 `observe(ticket, observation)`으로 결과를 전달한다.
+   현재 Mission·Step·Plan Version·Attempt ID와 저장된 Nav2 Goal UUID가 모두
+   일치해야 도착 결과를 반영한다. A 내부의 기존 테스트용
+   `handle_navigation_observation`을 외부 D가 직접 호출해서는 안 된다.
+4. 송신 콜백이 예외를 던지면 A는 현재 선점·시도 ID·UUID를 유지하고 복구 제한에 들어간 뒤 원래 예외를 호출자에게 전달한다. 비동기 콜백이 반환된 뒤 수락 확인이 시간 초과되거나 결과가 불확실하면 D 어댑터는 `report_dispatch_uncertain(ticket)`을 호출한다. 정상 콜백 반환은 수락 확인과 별개이며 복구를 시작하지 않는다.
+5. 같은 프로세스에서 복구 제한에 들어갔거나 A가 재시작한 경우 `begin_recovery_lookup()`으로 저장된 시도 컨텍스트와
+   Nav2 UUID를 D에 제공한다. D는 Nav2 활성 Goal뿐 아니라 아직 송신 가능한
+   **지연된 큐·전송 중 요청**도 확인해야 한다. 실행 중인 Goal도 없고 뒤늦은
+   송신 가능성도 배제한 경우에만 `RecoveryReport(lookup,
+   NavigationObservation.NO_ACTIVE_GOAL, no_pending_dispatch=True)`를 반환한다.
+   `NOT_ARRIVED`, `UNKNOWN`, `TIMEOUT`만으로 실행 부재를 확정하지 않는다.
+6. A는 해당 보고를 수용한 뒤에도 `approve_retry(lookup,
+   explicitly_approved=True)`를 **별도로 호출**해야 한다. 승인 시 새로운 시도
+   ID가 SQLite에 저장되고 이전 Nav2 UUID 매핑은 해제된다. 이후 새 시도에 대해
+   `prepare_dispatch` → `submit_once` 순서로 D에 전송한다.
+   지난 시도의 Goal UUID 또는 실행 시도 ID로 온 늦은 응답은 거부한다.
+
+이전 schema 1 스냅샷에 `nav_goal_id` 필드가 없으면 `None`으로 복구한다.
+UUID 누락을 미전송/실행 부재의 근거로 간주하지 않는다. D 어댑터가 모든
+가능한 이전 실행·지연 전송을 배제해야 한다. 이 코드는 D가 신뢰 가능한
+확인 결과를 제공한다는 계약을 전제로 하며, 자체적으로 Nav2 목표 목록이나
+외부 프로세스 송신 큐를 조사하지 않는다.
+
+MOCK 테스트 (Jazzy overlay 적용 후):
+
+```bash
+python3 -m pytest -q src/mission_manager/test/test_navigation_boundary.py
+```
+
+UUID 저장은 외부 송신 전에 완료된다. 송신 실패 시 기존 저장값을 유지하며, 재시작 시 선점된 목표에서 복구 제한을 복원한다. DB COMMIT과 외부 송신은 별도 단계이므로 재시도 전에 D가 실행 및 지연 송신 부재를 확인해야 한다.
+
+실제 Nav2 UUID/Action API, D의 실행 부재 증빙 및 지연 송신 배제, D 프로세스와 로봇 통신, 실차 주행은 후속 연동 검증 범위다.

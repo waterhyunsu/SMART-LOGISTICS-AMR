@@ -194,14 +194,27 @@ class MissionManager(Node):
             self.state.start_home_return()
         return self.current_goal()
 
-    def handle_navigation_observation(self, goal, observation):
-        """Advance only on arrival for the current logical dispatch."""
+    def handle_navigation_observation(self, goal, observation, nav_goal_id=None):
+        """Advance only for the bound Nav2 Goal UUID when a mapping exists."""
+        if self.state.nav_goal_id is not None and nav_goal_id != self.state.nav_goal_id:
+            return False
         if (self.state.recovery_required or goal is None or goal != self.current_goal()
                 or observation is not NavigationObservation.ARRIVED):
             return False
         if goal.step_id is None:
             return self.state.arrive_home()
         return not self.state.waiting and self.arrive(goal.step_id)
+
+    def require_dispatch_recovery(self, goal, nav_goal_id):
+        """Suspend a bound, unconfirmed goal without changing its durable claim."""
+        if (goal is None or goal != self.current_goal() or nav_goal_id is None
+                or nav_goal_id != self.state.nav_goal_id or self.state.waiting
+                or self.state.recovery_required):
+            return False
+        # Restart already enters recovery for every persisted outstanding claim.
+        self.state.recovery_required = True
+        self.plan_status = 'recovery_required'
+        return True
 
     def begin_recovery_check(self):
         """Identify the current recovered target for the D adapter."""
