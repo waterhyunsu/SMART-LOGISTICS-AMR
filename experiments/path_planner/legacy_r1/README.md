@@ -29,13 +29,17 @@
 | `experiments/r1/scenarios.yaml` | 강의실·TurtleBot3·창고 월드의 지점과 시나리오 (R1-A~R1-D2, L-A~L-D2) |
 | `experiments/r1/maps/` | `lecture_hall_real`(강의실 복제 월드에서 만든 맵), `warehouse_large`(40 × 30 m 창고) |
 | `experiments/r1/nav2/` | Nav2 설정(`nav2_r1.yaml`: NavFn `use_astar` true/false 등), BT XML, 런치, 실행 스크립트, NavFn C++ 벤치(`navfn_bench.cpp`), 선정 설정 초안(`planner_server_final.yaml`) |
-| `experiments/r1/results/` | 실험 결과 24개 폴더: `trials.csv`(원자료), `summary.md`, `meta.json`, 그림(`fig_*.png`, `paths_*.png`), costmap 스냅샷(`costmaps/*.bin`), 시나리오별 맵(`maps/*.pgm`) |
+| `experiments/r1/results/` | 실험 결과 24개 폴더: `trials.csv`(원자료), `summary.md`, `meta.json`, 그림(`fig_*.png`, `paths_*.png`). 원시 데이터는 제외했다 (아래 참고) |
 | `tools/r1_bench.py` | 실험 도구 (`offline` / `sim` / `nav2plan` / `nav2sim` / `navfncore` / `report`) |
 | `tools/clean_map.py`, `tools/world_to_map.py`, `tools/make_hall_world.py`, `tools/make_warehouse_world.py` | 맵·월드 생성 도구 (`r1_bench.py`와 맵 재생성에 필요) |
 | `worlds/lecture_hall_real.world`, `worlds/warehouse_large.world` | Gazebo Classic 월드 |
 | `ros2_ws/src/warehouse_robot/warehouse_robot/{astar.py, plan_map.py}` | 이전 프로젝트의 자체 격자 플래너 (`r1_bench.py`가 import). **ROS 패키지가 아니다** (`package.xml`·`setup.py` 미포함) |
 | `ros2_ws/src/warehouse_robot/config/params.yaml`, `.../test/test_{astar,plan_map}.py` | 위 플래너의 설정과 단위 테스트 |
 | `COLCON_IGNORE` | 저장소 루트에서 `colcon build`를 실행해도 이 폴더를 패키지로 탐색하지 않게 한다 |
+
+**제외한 원시 데이터:** 결과 폴더의 costmap 스냅샷(`costmaps/*.bin`)과 시나리오별 장애물 맵(`maps/*.pgm`, `maps/*.yaml`)은 팀 저장소 용량 때문에 넣지 않았다.
+`navfncore` 결과의 `meta.json`이 가리키는 `costmaps/*.bin`도 여기 없으며, `r1_bench.py navfncore`로 다시 계산하려면 이 파일들이 필요하다.
+필요하면 원본 저장소의 스냅샷 커밋 `2e0ca5f2`에서 가져온다. 요약표·원자료(`trials.csv`)·그림은 모두 포함되어 있다.
 
 결과 폴더 이름은 `<시각>_<모드>[-<A* 쪽 플래너>]_<월드>` 형식이다. 모드: `offline`·`sim`(자체 플래너), `nav2plan`(ComputePathToPose 계획),
 `navfncore`(NavFn 핵심 계산 C++ 직접 호출), `nav2sim`(Gazebo 주행).
