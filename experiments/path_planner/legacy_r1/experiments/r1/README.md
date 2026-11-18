@@ -101,7 +101,7 @@ wsl -d ros-docker                     # Docker 가 설치된 WSL 배포판. 실�
 ```
 
 ```bash
-cd /mnt/d/teamfinal/team_project2
+cd <이전 저장소 경로>
 docker compose build                                                   # 처음 한 번
 WSIM_ARGS=none docker compose up -d                                    # 컨테이너 wsim (웹 서버만)
 docker exec wsim /app/experiments/r1/nav2/run_nav2_sim.sh lecture_hall_real   # Gazebo + Nav2 + 초기 위치
