@@ -14,14 +14,15 @@ from rclpy.utilities import remove_ros_args
 
 from logistics_msgs.msg import TaskStep
 from logistics_msgs.srv import OptimizeRoute
-from mission_manager.contract import MissionState
+from mission_manager.persistence import PersistentMission
 
 
 class MissionManager(Node):
     def __init__(self, **kwargs):
         super().__init__('mission_manager', **kwargs)
         mission_id = self.declare_parameter('mission_id', str(uuid4())).value
-        self.state = MissionState(mission_id, [])
+        database = self.declare_parameter('database_path', ':memory:').value
+        self.state = PersistentMission(database, mission_id)
         self.timeout = self.declare_parameter('optimizer_timeout_sec', 5.0).value
         if not isfinite(self.timeout) or self.timeout <= 0:
             raise ValueError('optimizer_timeout_sec must be finite and positive')
@@ -29,10 +30,15 @@ class MissionManager(Node):
         self.request = None
         self.future = None
         self.candidate = None
-        self.plan_status = 'idle'
+        self.plan_status = 'recovery_required' if self.state.recovery_required else 'idle'
         self.timer = self.create_timer(
             min(0.02, self.timeout), self._poll, clock=Clock(clock_type=ClockType.STEADY_TIME),
             autostart=False)
+
+    def destroy_node(self):
+        self._stop_call()
+        self.state.close()
+        return super().destroy_node()
 
     def register_jobs(self, steps, start_waypoint_id, cost_revision):
         """Order intake boundary; while busy, plan from the current destination."""
@@ -62,7 +68,7 @@ class MissionManager(Node):
 
     def _reject(self, status, reason):
         self._stop_call()
-        self.state.pending_request_id = None
+        self.state.invalidate_request()
         self.plan_status = status
         self.get_logger().warning(f'Optimization {status}: {reason}')
 
