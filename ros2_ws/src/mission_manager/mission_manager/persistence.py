@@ -8,6 +8,10 @@ from logistics_msgs.msg import TaskStep
 from mission_manager.contract import MissionState
 
 
+class RecoveryPending(RuntimeError):
+    """Retryable result: no new event has been recorded during recovery."""
+
+
 class PersistentMission:
     transitions = frozenset({
         'add_steps', 'update_cost_revision', 'request', 'apply',
@@ -115,11 +119,12 @@ class PersistentMission:
     def __getattr__(self, name):
         if name in self.transitions:
             def transition(*args, **kwargs):
-                if self.recovery_required:
-                    if name == 'handoff' and (args[0] if args else kwargs.get('event_id')) in self._state.handoff_results:
-                        # Replay stored results, including key conflicts, without a new transition.
+                if name == 'handoff':
+                    event_id = args[0] if args else kwargs.get('event_id')
+                    if event_id in self._state.handoff_results:
                         return self._state.handoff(*args, **kwargs)
-                    raise RuntimeError('external step reconciliation required after restart')
+                if self.recovery_required:
+                    raise RecoveryPending('external step reconciliation required after restart')
                 candidate = deepcopy(self._state)
                 result = getattr(candidate, name)(*args, **kwargs)
                 self._commit(candidate)

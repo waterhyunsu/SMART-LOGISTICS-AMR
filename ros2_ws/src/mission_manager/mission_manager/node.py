@@ -1,6 +1,8 @@
 """Single-executor mission manager. No navigation commands or web endpoints."""
 
 import argparse
+from dataclasses import dataclass
+from enum import Enum, auto
 from math import isfinite
 import sys
 from time import monotonic
@@ -17,6 +19,23 @@ from logistics_msgs.srv import OptimizeRoute
 from mission_manager.persistence import PersistentMission
 
 
+class NavigationObservation(Enum):
+    ARRIVED = auto()
+    NOT_ARRIVED = auto()
+    UNKNOWN = auto()
+    DISCONNECTED = auto()
+    TIMEOUT = auto()
+
+
+@dataclass(frozen=True)
+class RecoveryCheck:
+    check_id: str
+    mission_id: str
+    step_id: str
+    plan_version: int
+    waypoint_id: str
+
+
 class MissionManager(Node):
     def __init__(self, **kwargs):
         super().__init__('mission_manager', **kwargs)
@@ -30,6 +49,7 @@ class MissionManager(Node):
         self.request = None
         self.future = None
         self.candidate = None
+        self._recovery_check = None
         self.plan_status = 'recovery_required' if self.state.recovery_required else 'idle'
         self.timer = self.create_timer(
             min(0.02, self.timeout), self._poll, clock=Clock(clock_type=ClockType.STEADY_TIME),
@@ -105,12 +125,42 @@ class MissionManager(Node):
         self.plan_status = 'applied' if accepted else 'rejected'
         self.get_logger().info(f'Plan {self.plan_status}, version {self.state.active_version}')
 
+    def begin_recovery_check(self):
+        """Identify the current recovered target for the D adapter."""
+        if not self.state.recovery_required:
+            raise ValueError('no recovered step awaiting confirmation')
+        step_id = self.state.current
+        self._recovery_check = RecoveryCheck(
+            check_id=uuid4().hex, mission_id=self.state.mission_id, step_id=step_id,
+            plan_version=self.state.active_version,
+            waypoint_id=self.state.steps[step_id].waypoint_id)
+        return self._recovery_check
+
+    def handle_recovery_observation(self, check, observation):
+        """Apply a verified observation on the single executor."""
+        if (not self.state.recovery_required or self._recovery_check is None
+                or check != self._recovery_check):
+            return False
+        if not isinstance(observation, NavigationObservation):
+            raise ValueError('expected a NavigationObservation')
+        if observation not in (NavigationObservation.ARRIVED, NavigationObservation.NOT_ARRIVED):
+            self._recovery_check = None
+            return False
+        self.state.reconcile(check.step_id, arrived=observation is NavigationObservation.ARRIVED)
+        self._recovery_check = None
+        self.plan_status = 'applied' if self.state.active_version else 'idle'
+        return True
+
     def arrive(self, step_id):
         return self.state.arrive(step_id)
 
     def handoff(self, event_id, mission_id, step_id):
+        if not all(isinstance(value, str) and value.strip()
+                   for value in (event_id, mission_id, step_id)):
+            raise ValueError('event_id, mission_id and step_id must be nonempty strings')
+        previous_step = self.state.current
         outcome = self.state.handoff(event_id, mission_id, step_id)
-        if outcome == 'accepted' and self.state.current is None and self.candidate is not None:
+        if previous_step and outcome == 'accepted' and self.state.current is None and self.candidate is not None:
             self._apply_candidate()
         return outcome
 
