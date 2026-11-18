@@ -17,6 +17,7 @@ class PersistentMission:
     transitions = frozenset({
         'add_steps', 'update_cost_revision', 'request', 'apply',
         'start_next', 'arrive', 'confirm', 'start_home_return', 'arrive_home',
+        'bind_nav_goal',
     })
 
     def __init__(self, path, mission_id):
@@ -50,6 +51,7 @@ class PersistentMission:
         # Existing schema-1 snapshots did not track the final verified waypoint.
         values.setdefault('home_status', 'away')
         values.setdefault('attempt_id', None)
+        values.setdefault('nav_goal_id', None)
         steps = [TaskStep(**step) for step in values['steps']]
         state = MissionState(values['mission_id'], steps)
         if set(values) != set(state.__dict__):
@@ -97,6 +99,13 @@ class PersistentMission:
                 not isinstance(attempt_id, str) or not attempt_id.strip()
                 or (current is None and values['home_status'] != 'returning')):
             raise ValueError('invalid execution attempt')
+        nav_goal_id = values['nav_goal_id']
+        if nav_goal_id is not None and (
+                not isinstance(nav_goal_id, str) or len(nav_goal_id) != 32
+                or any(char not in '0123456789abcdef' for char in nav_goal_id)
+                or attempt_id is None
+                or (current is None and values['home_status'] != 'returning')):
+            raise ValueError('invalid Nav2 Goal ID mapping')
         events = values['handoff_results']
         if not isinstance(events, dict):
             raise ValueError('invalid event ledger')
@@ -181,6 +190,7 @@ class PersistentMission:
             raise ValueError('no matching recoverable execution attempt')
         candidate = deepcopy(self._state)
         candidate.attempt_id = uuid4().hex
+        candidate.nav_goal_id = None
         self._commit(candidate)
         self.recovery_required = False
 
