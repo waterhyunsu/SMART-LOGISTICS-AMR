@@ -60,3 +60,23 @@ ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST python3 -m pytest -q src/mission_manager
 ```
 
 실제 통합에서는 D의 Goal ID·위치 확인 근거와 기한 처리, E의 HTTP 결과 매핑·ACK 전달과 동일 이벤트 재전송을 연결해 검증해야 한다.
+
+## 미션 실행 오케스트레이션
+
+MOCK 또는 A의 후속 어댑터는 단일 executor에서 다음 순서로 호출한다.
+
+1. `register_jobs`로 작업을 등록한다. A가 기존 `OptimizeRoute` 응답을 검증·승인한다. 주행 중에 수신한 유효 후보는 현재 단계의 인계 완료 경계에서 다시 검증한다.
+2. `claim_next_goal()`은 실행할 목표 하나를 SQLite에 기록한 뒤 미션·단계·계획 버전·논리적 Waypoint를 반환한다. 호출자는 받은 목표를 D에 전달한다. `current_goal()`은 이미 선점된 목표의 조회용이다. 복구 제한 중, 목표 진행 중, 재계획 응답 대기 중에는 새 목표가 나오지 않는다.
+3. D 대역은 `handle_navigation_observation(goal, NavigationObservation.ARRIVED)`로 일치하는 목표의 도착을 알린다. 중복 도착과 다른 목표의 결과는 상태를 바꾸지 않는다. 불확실한 결과에서는 현재 목표가 유지된다. 복구 제한 중에는 기존 복구 확인 흐름을 사용한다.
+4. E 대역은 `handoff(event_id, mission_id, step_id)`로 별도 인계를 확인한다. 동일 ACK 재전송은 기존 결과를 반환한다. 인계가 커밋되면 다음 선점 호출에서 후속 목표를 받을 수 있다.
+5. 모든 TaskStep의 인계가 완료되고 HOME이 확인되면 미션 상태가 `completed`가 된다. 마지막 인계가 HOME 하역이면 해당 인계까지 기다린다. 마지막 인계가 다른 지점이면 A가 `step_id=None`인 논리적 HOME 복귀 목표를 별도로 선점한다. 이는 물품 인계 단계가 아니다. 재시작 시 진행 중인 복귀 목표도 확인 전까지 다시 발행하지 않는다.
+
+`mission_status`, `job_status(job_id)`, `step_status(step_id)`는 상태 조회용이다. C의 순서는 물류 TaskStep 목록이므로 별도 HOME 복귀를 표현할 수 없다. 복귀 목표는 A 내부에서 처리하며 공통 서비스는 유지한다. 비용·최적화 관점에서 최종 HOME 구간을 포함하는 방법은 C와 연동 시 확인한다.
+
+SQLite 스냅샷에 HOME 복귀/확인 상태를 추가했다. 이전 schema 1에 이 필드가 없으면 위치를 추정하지 않는다. 이전 데이터에서 모든 인계가 끝났더라도 A는 HOME 확인용 목표를 반환할 수 있다. 재시작 후 현재 목표는 다시 선점할 수 없으며 실제 Nav2 Goal ID와 대조하는 작업이 필요하다. SQLite 선점은 A 내부에서만 중복 발행을 막는다. DB 커밋과 외부 목표 전송 사이의 장애 및 실제 E의 ACK 전달은 D·E 통합 시 검증한다.
+
+Jazzy overlay를 설정한 뒤 워크스페이스에서 MOCK E2E를 실행한다.
+
+```bash
+ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST python3 -m pytest -q src/mission_manager/test/test_orchestration.py
+```

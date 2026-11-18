@@ -15,7 +15,7 @@ class RecoveryPending(RuntimeError):
 class PersistentMission:
     transitions = frozenset({
         'add_steps', 'update_cost_revision', 'request', 'apply',
-        'start_next', 'arrive', 'confirm',
+        'start_next', 'arrive', 'confirm', 'start_home_return', 'arrive_home',
     })
 
     def __init__(self, path, mission_id):
@@ -35,7 +35,7 @@ class PersistentMission:
                 raise ValueError('invalid mission snapshot') from error
         else:
             self._state = MissionState(mission_id, [])
-        self.recovery_required = bool(self.recovered and self._state.current)
+        self.recovery_required = bool(self.recovered and (self._state.current or self._state.home_status == 'returning'))
         # Requests and deferred candidates never survive a process restart.
         candidate = deepcopy(self._state)
         candidate.pending_request_id = None
@@ -46,6 +46,8 @@ class PersistentMission:
         values = json.loads(snapshot)
         if values.pop('schema') != 1:
             raise ValueError('unsupported mission snapshot schema')
+        # Existing schema-1 snapshots did not track the final verified waypoint.
+        values.setdefault('home_status', 'away')
         steps = [TaskStep(**step) for step in values['steps']]
         state = MissionState(values['mission_id'], steps)
         if set(values) != set(state.__dict__):
@@ -83,6 +85,11 @@ class PersistentMission:
             if not seen.issuperset(state.steps[key].prerequisite_ids):
                 raise ValueError('plan violates prerequisites')
             seen.add(key)
+        if values['home_status'] not in ('away', 'returning', 'home'):
+            raise ValueError('invalid HOME status')
+        if values['home_status'] == 'returning' and (
+                not state.steps or completed != state.steps.keys()):
+            raise ValueError('HOME return with unfinished steps')
         events = values['handoff_results']
         if not isinstance(events, dict):
             raise ValueError('invalid event ledger')
@@ -153,7 +160,10 @@ class PersistentMission:
         if type(arrived) is not bool:
             raise ValueError('arrived must be bool')
         candidate = deepcopy(self._state)
-        candidate.waiting = arrived
+        if step_id is not None:
+            candidate.waiting = arrived
+        elif arrived:
+            candidate.arrive_home()
         self._commit(candidate)
         self.recovery_required = False
 
