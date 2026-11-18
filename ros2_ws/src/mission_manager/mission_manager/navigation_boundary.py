@@ -73,7 +73,8 @@ class NavigationDispatchBoundary:
                 or self.manager.state.recovery_required
                 or self.manager.state.nav_goal_id != ticket.nav_goal_id):
             return False
-        return self.manager.handle_navigation_observation(ticket.goal, observation)
+        return self.manager.handle_navigation_observation(
+            ticket.goal, observation, nav_goal_id=ticket.nav_goal_id)
 
     def begin_recovery_lookup(self):
         """Create a new correlation ID for inspection of the persisted UUID."""
