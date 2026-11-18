@@ -8,10 +8,14 @@ from logistics_msgs.msg import TaskStep
 from mission_manager.contract import MissionState
 
 
+class RecoveryPending(RuntimeError):
+    """Retryable result: no new event has been recorded during recovery."""
+
+
 class PersistentMission:
     transitions = frozenset({
         'add_steps', 'update_cost_revision', 'request', 'apply',
-        'start_next', 'arrive', 'confirm', 'handoff',
+        'start_next', 'arrive', 'confirm',
     })
 
     def __init__(self, path, mission_id):
@@ -116,10 +120,7 @@ class PersistentMission:
         if name in self.transitions:
             def transition(*args, **kwargs):
                 if self.recovery_required:
-                    if name == 'handoff' and (args[0] if args else kwargs.get('event_id')) in self._state.handoff_results:
-                        # Replay stored results, including key conflicts, without a new transition.
-                        return self._state.handoff(*args, **kwargs)
-                    raise RuntimeError('external step reconciliation required after restart')
+                    raise RecoveryPending('external step reconciliation required after restart')
                 candidate = deepcopy(self._state)
                 result = getattr(candidate, name)(*args, **kwargs)
                 self._commit(candidate)
@@ -127,6 +128,23 @@ class PersistentMission:
             return transition
         value = getattr(self._state, name)
         return value if callable(value) else deepcopy(value)
+
+    def handoff(self, event_id, mission_id, step_id):
+        outcome, _ = self.handoff_transition(event_id, mission_id, step_id)
+        return outcome
+
+    def handoff_transition(self, event_id, mission_id, step_id):
+        """Return the ACK and whether this call durably completed the current step."""
+        if event_id in self._state.handoff_results:
+            return self._state.handoff(event_id, mission_id, step_id), False
+        if self.recovery_required:
+            raise RecoveryPending('external step reconciliation required after restart')
+        candidate = deepcopy(self._state)
+        outcome = candidate.handoff(event_id, mission_id, step_id)
+        completed_now = (outcome == 'accepted' and step_id == self._state.current
+                         and candidate.current is None)
+        self._commit(candidate)
+        return outcome, completed_now
 
     def reconcile(self, step_id, *, arrived):
         """A adapter calls this only after external/operator state confirmation."""
