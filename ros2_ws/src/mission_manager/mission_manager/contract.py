@@ -1,4 +1,4 @@
-"""In-memory A-side contract fixture for MOCK. No ROS nodes or robot I/O."""
+"""In-memory mission state shared by the ROS node and contract tests."""
 
 from copy import deepcopy
 from graphlib import CycleError, TopologicalSorter
@@ -8,7 +8,7 @@ from logistics_msgs.msg import TaskStep
 from logistics_msgs.srv import OptimizeRoute
 
 
-class MockMission:
+class MissionState:
     def __init__(self, mission_id, steps):
         if not mission_id.strip():
             raise ValueError('missing mission ID')
@@ -84,24 +84,31 @@ class MockMission:
         self.latest_request_id = request.request_id
         return request
 
-    def apply(self, result):
-        """Validate against live state at the step boundary before replacing the suffix."""
-        if (self.current or not result.success or result.mission_id != self.mission_id
+    def valid_candidate(self, result):
+        """Validate the suffix that starts after the protected current step."""
+        if (not result.success or result.mission_id != self.mission_id
                 or result.request_id != self.pending_request_id
                 or result.base_version != self.active_version
                 or result.cost_revision != self.cost_revision
                 or not isfinite(result.estimated_distance_m) or result.estimated_distance_m < 0):
             return False
         order = list(result.ordered_step_ids)
-        pending = self.steps.keys() - self.completed
+        seen = self.completed.copy()
+        if self.current:
+            seen.add(self.current)
+        pending = self.steps.keys() - seen
         if len(order) != len(pending) or set(order) != pending:
             return False
-        seen = self.completed.copy()
         for key in order:
             if not seen.issuperset(self.steps[key].prerequisite_ids):
                 return False
             seen.add(key)
-        self.order = order
+        return True
+
+    def apply(self, result):
+        if self.current or not self.valid_candidate(result):
+            return False
+        self.order = list(result.ordered_step_ids)
         self.pending_request_id = None
         self.active_version += 1
         return True
@@ -135,3 +142,7 @@ class MockMission:
         outcome = 'accepted' if self.confirm(mission_id, step_id) else 'rejected'
         self.handoff_results[event_id] = (step_id, outcome)
         return outcome
+
+
+# Phase 0 callers import the same state machine under this name.
+MockMission = MissionState

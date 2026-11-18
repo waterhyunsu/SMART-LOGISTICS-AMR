@@ -16,5 +16,6 @@ setup(
     maintainer_email='waterhyunsu@gmail.com',
     description='Mission state and plan acceptance.',
     license='TODO',
+    entry_points={'console_scripts': ['mission_manager = mission_manager.node:main']},
     tests_require=['pytest'],
 )
