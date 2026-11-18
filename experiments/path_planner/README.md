@@ -1,35 +1,142 @@
 # experiments/path_planner — 전역 경로 탐색 비교 (B · 정지호)
 
-> 연구 1: 동일한 지도·Costmap·출발/목표에서 Nav2 전역 플래너(NavFn A*·Dijkstra)를 비교해 플래너 선정 근거를 제공한다.
+> 연구 1: 동일한 지도·Costmap·출발/목표에서 Nav2 NavFn의 A*(`use_astar: true`)와 Dijkstra(`use_astar: false`)를 비교해 플래너 선정 근거를 제공한다.
 > 위치 근거: ADR-015 ("B 실험은 `experiments/path_planner/`"). B 전용 ROS2 패키지는 만들지 않는다 (ADR-003, `docs/ARCHITECTURE.md` §5).
 
 ## 현재 상태
 
 | 항목 | 상태 |
 | --- | --- |
-| 이전 연구(Humble) 코드·결과 | [`legacy_r1/`](legacy_r1/README.md)에 이관함. 참고 자료이며 Jazzy에서는 [미확인] |
-| Jazzy 비교 조건·설정·실행 스크립트 | **미착수**: 아래 "다음 작업" |
-| 측정 결과 (SIM / REAL) | 없음. Jazzy 환경 측정 전 |
-| 전역 플래너 최종 선정 (P-009) | VERIFY: B·D 실험 후 A 승인 |
+| B 가이드 첫 번째 기능: 재현 가능한 비교 조건 | 구현함. 고정 출발/목표 쌍, 실패 사례, 설정 쌍, 실행 스크립트, 결과 기록 |
+| MOCK | `tests/` 21개 통과 (가짜 플래너) |
+| SIM (planner-only) | Jazzy Docker에서 1회 측정: [`results/20261118T061956Z_SIM_lecture_hall_v1`](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md) |
+| SIM (Gazebo 주행) / REAL | 미측정 |
+| 지도 | **[초안-팀합의필요]** legacy 강의실 복제 맵을 임시로 사용. D의 공식 지도·HOME·A~D 지점(P-014) 확정 전 |
+| 전역 플래너 최종 선정 (P-009) | VERIFY. 이 결과만으로 선정하지 않는다 |
+| 이전 연구 (Humble) | [`legacy_r1/`](legacy_r1/README.md): 참고 자료, Jazzy에서는 [미확인] |
 
-## 다음 작업 — B 가이드 첫 번째 기능
+## 구성
 
-기준: [`docs/TEAM_GUIDES/B_PATH_PLANNER.md`](../../docs/TEAM_GUIDES/B_PATH_PLANNER.md), [`COMMON_AI_PROMPT.md`](../../docs/TEAM_GUIDES/COMMON_AI_PROMPT.md)
+| 경로 | 내용 |
+| --- | --- |
+| [`config/navfn_compare.yaml`](config/navfn_compare.yaml) | planner_server 하나에 NavFn 두 개(`NavFnAStar`, `NavFnDijkstra`). `use_astar`만 다르고 같은 global costmap을 쓴다 |
+| [`scenarios/lecture_hall_v1.yaml`](scenarios/lecture_hall_v1.yaml) | 고정 지점과 쌍: R1-A 개방, R1-B 장애물 우회, R1-C 좁은 통로(각각 정·역방향), FAIL-WALLED(벽으로 막힌 영역), FAIL-OFFMAP(지도 밖 목표) |
+| [`launch/planner_bench.launch.py`](launch/planner_bench.launch.py) | planner-only 스택: map_server + planner_server + lifecycle_manager + 정적 TF `map → base_footprint` |
+| [`scripts/run_compare.py`](scripts/run_compare.py) | `ComputePathToPose`(`start` + `use_start: true`, `planner_id`)로 같은 쌍을 두 설정에서 반복 실행하고 결과를 기록 |
+| [`scripts/bench_core.py`](scripts/bench_core.py) | ROS 없는 핵심 로직: 시나리오·설정 검증, 버전 해시, 경로 길이, 시행 반복, CSV/JSON 기록 |
+| [`scripts/run_planner_only.sh`](scripts/run_planner_only.sh) | 런치 → 비교 → 종료를 한 번에 실행. DDS 탐색 범위 기본값은 `LOCALHOST` |
+| [`docker/Dockerfile`](docker/Dockerfile) | ROS 2 Jazzy + Nav2 planner-only 실행 환경 |
+| `tests/` | MOCK 테스트 |
+| `results/` | 측정 결과 (실험마다 새 폴더) |
 
-- [ ] D와 지도·프레임(`map`)·플래너 실행 환경을 맞춘다. D의 공식 지도가 나오기 전에 쓰는 임시 지도는 `[초안-팀합의필요]`로 표시한다.
-- [ ] 고정된 출발/목표 쌍을 정의한다. 방향별로 따로 정의하고(`A → B`, `B → A`, INTERFACES §8.4), 도달 불가 실패 사례를 포함한다.
-- [ ] NavFn 설정을 `use_astar: true` / `false` 두 개로 분리한다. 나머지 설정은 같게 두고, 각 설정에 플래너 ID와 설정 버전을 붙인다.
-- [ ] `ComputePathToPose`를 `start` + `use_start: true`로 호출해 같은 쌍을 두 설정에서 다시 실행하는 스크립트를 만든다.
-- [ ] 결과는 `docs/INTERFACES.md` §4.7 ExperimentResult 항목에 맞춰 CSV·JSON으로 기록한다. 경로 길이(m), 계획 시간, 성공 여부, 실패 사유, `planner_id`, `config_version`, `map_version`, `run_mode`를 포함한다.
-- [ ] 완료 확인: 도달 불가 구간이 실패로 남는지, 설정·지도 버전별로 결과를 분리할 수 있는지 본다. 측정값에는 SIM 또는 REAL을 표시하고, 계획 경로 길이와 실제 주행 거리를 구분한다.
-- [ ] 실행 환경이 없으면 준비한 설정과 미측정 항목을 구분하고, PR에 재현 명령을 남긴다.
+## 비교 조건
 
-`legacy_r1/`의 시나리오(R1-A~R1-D2), 측정 방법(`r1_bench.py nav2plan`), 결과 형식은 위 작업의 출발점으로 참고할 수 있다.
-다만 Humble 전용 부분(Gazebo Classic `gazebo_msgs`, 이전 프로젝트 `scripts/`)은 Jazzy 기준으로 다시 작성한다.
+| 조건 | 적용 |
+| --- | --- |
+| 같은 지도·Costmap | 하나의 planner_server와 하나의 global costmap(static + inflation)을 두 플러그인이 공유한다. 측정 전 map_server가 올린 지도의 크기·해상도·원점·frame을 시나리오 지도와 대조한다 |
+| 같은 Footprint | `robot_radius` 0.22 m, inflation 0.55 m / 3.0 (Nav2 기본값) |
+| 같은 출발·목표 | 시나리오 파일의 고정 Pose. 모든 요청이 `use_start: true`이므로 로봇 현재 위치를 쓰지 않는다 |
+| 설정 차이 | `use_astar` 하나만 다르다. 파일에서 검사하고(`check_comparison_pair`), 측정 전 planner_server의 실제 파라미터도 대조한다. 다르면 측정을 거부한다 |
+| 방향 | `A → B`와 `B → A`를 별도 실행으로 둔다 (INTERFACES §8.4) |
+| 순서 영향 | 반복마다 두 플래너의 실행 순서를 바꾼다 |
+| 반복 | 예열 1회(요약에서 제외, `warmup=True`로 기록) + 측정 N회 |
+| 기록 | 성공과 실패를 모두 기록한다. 실패는 Nav2 오류 이름(`NO_VALID_PATH` 등)으로 남기고 임의 거리로 대체하지 않는다 |
 
-## 작업 규칙 요약
+## 실행 방법
 
-- 브랜치는 최신 `main`에서 만든 `feat/b-path-planner`를 쓴다. PR은 main 대상으로 생성까지만 하고, 병합은 팀장 A가 한다 (`CONTRIBUTING.md`).
-- 공통 `.msg`·`.srv`·Topic·Service·Action 변경은 A의 승인이 필요하다. ExperimentResult는 ROS 메시지가 아니라 JSON·CSV·SQLite로 관리한다 (INTERFACES §4.7).
-- D의 Nav2 배포 설정(`amr_navigation`)은 D와 협의해서 바꾼다. 비용표 기준은 C에게 플래너 ID와 설정 버전으로 전달한다 (INTERFACES §9).
-- 측정하지 않은 수치는 쓰지 않는다. 실패 결과도 기록한다 (ADR-012).
+### Docker (검증한 방법: Windows 11 + WSL2 Ubuntu 24.04 + Docker Engine)
+
+저장소 루트에서 실행한다.
+
+```bash
+docker build -t amr-path-planner-bench:jazzy experiments/path_planner/docker
+docker run --rm --network none -v "$PWD":/repo amr-path-planner-bench:jazzy bash -c '
+  source /opt/ros/jazzy/setup.bash &&
+  bash experiments/path_planner/scripts/run_planner_only.sh experiments/path_planner/scenarios/lecture_hall_v1.yaml \
+    --run-mode SIM --repeat 30 --warmup 1 --git-commit <측정한 코드 커밋> --note "planner-only"'
+```
+
+`--network none`을 쓰면 다른 PC나 로봇의 ROS 노드와 DDS가 섞이지 않는다.
+
+### Ubuntu 24.04 + ROS 2 Jazzy (직접 설치) — [미확인: Docker에서만 실행함]
+
+```bash
+sudo apt install ros-jazzy-nav2-planner ros-jazzy-nav2-navfn-planner ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager
+source /opt/ros/jazzy/setup.bash
+bash experiments/path_planner/scripts/run_planner_only.sh experiments/path_planner/scenarios/lecture_hall_v1.yaml \
+  --run-mode SIM --repeat 30 --warmup 1
+```
+
+런치와 비교를 따로 띄우려면 `ros2 launch experiments/path_planner/launch/planner_bench.launch.py map:=<map.yaml>`을 실행한 뒤,
+다른 터미널에서 `python3 experiments/path_planner/scripts/run_compare.py --scenarios <yaml> --run-mode SIM`을 실행한다.
+
+### MOCK 테스트
+
+```bash
+python3 -m pytest experiments/path_planner/tests -q      # PyYAML, pytest 필요. ROS 불필요
+```
+
+## 결과 형식
+
+`results/<UTC 시각>_<run_mode>_<scenario_set>/` 폴더에 다음 파일을 쓴다. 기존 폴더는 덮어쓰지 않는다.
+
+| 파일 | 내용 |
+| --- | --- |
+| `trials.csv` | 시행 1건당 1행. 앞쪽 열은 `docs/INTERFACES.md` §4.7 ExperimentResult 순서다. 주행 항목(`actual_distance`, `execution_time`, `goal_success`, `mission_success`, `controller_id`)은 이 실험에서 측정하지 않으므로 비워 둔다 |
+| `summary.csv`, `summary.md` | 실행·플래너별 성공률, 경로 길이 평균·표준편차·범위, 계획 시간 중앙값·최대, 실패 사유. 예열은 제외 |
+| `meta.json` | 버전, 측정 코드 커밋, 실행 환경(ROS·Nav2 버전, Docker 이미지), 실제 로드된 지도, planner_server 실제 파라미터 |
+
+| 열 | 단위·의미 |
+| --- | --- |
+| `planned_distance` | m, 계획 경로 Pose 사이 거리 합. **실제 주행 거리가 아니다** |
+| `planning_time` | ms, planner_server가 결과에 보고한 계산 시간. 보고하지 않으면 빈 값 |
+| `roundtrip_time` | ms, 요청 전송부터 결과 수신까지 (DDS·액션 왕복 포함) |
+| `path_end_error` | m, 경로 마지막 Pose와 요청 목표 사이 거리 (NavFn `tolerance`로 목표 근처에서 끝난 경우 확인용) |
+| `plan_success` / `expectation_met` | 경로 생성 여부 / 시나리오 `expect`와 일치 여부 |
+| `config_version`, `map_version`, `scenario_version` | `<파일 이름>@<내용 SHA-256 앞 12자리>`. 텍스트 파일은 줄바꿈(CRLF/LF)을 정규화해서 해시한다. 설정·지도·시나리오가 바뀌면 값이 달라지므로 결과를 버전별로 나눌 수 있다 |
+
+## 측정 결과 — SIM (planner-only)
+
+실험 [`20261118T061956Z_SIM_lecture_hall_v1`](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md).
+측정 코드 `6084b6e`, `navfn_compare@b6b5e3a1039a`, `lecture_hall_real@4995e81c1fb1`, `lecture_hall_v1@81133c5442f3`.
+환경: Docker `amr-path-planner-bench:jazzy` (ROS 2 Jazzy, Nav2 1.3.14, Python 3.12.3), WSL2, 8 스레드 CPU.
+Gazebo·AMCL·LiDAR는 쓰지 않았다. 예열 1회와 측정 30회.
+
+| 실행 | 기대 | 성공 A* / Dijkstra | 경로 길이 A* / Dijkstra (m) | 계획 시간 중앙값 A* / Dijkstra (ms) |
+| --- | --- | --- | --- | --- |
+| R1-A:fwd 개방 | success | 30/30 / 30/30 | 6.6 / 6.6 | 0.3435 / 0.5305 |
+| R1-A:rev | success | 30/30 / 30/30 | 6.6 / 6.6 | 0.3345 / 0.543 |
+| R1-B:fwd 장애물 우회 | success | 30/30 / 30/30 | 8.7573 / 8.6559 | 0.496 / 0.614 |
+| R1-B:rev | success | 30/30 / 30/30 | 8.5323 / 8.5294 | 0.8665 / 0.767 |
+| R1-C:fwd 좁은 통로 | success | 30/30 / 30/30 | **17.5687** / 9.239 | 1.0385 / 0.8485 |
+| R1-C:rev | success | 30/30 / 30/30 | 8.9546 / 9.1211 | 0.9135 / 0.8245 |
+| FAIL-WALLED 벽으로 막힘 | failure | 0/30 / 0/30 (`NO_VALID_PATH`) | - | 보고 안 됨 |
+| FAIL-OFFMAP 지도 밖 | failure | 0/30 / 0/30 (`GOAL_OUTSIDE_MAP`) | - | 보고 안 됨 |
+
+관찰한 사실 (이 지도·이 설정에 한함):
+
+- 도달 가능한 6개 실행에서 두 설정 모두 30/30 성공했고, 경로 끝이 목표와 일치했다(`path_end_error` 0.0 m).
+  도달 불가 2건은 두 설정 모두 실패로 남았다. 480개 측정 시행 모두 기대 결과와 일치했다.
+- 같은 조건 30회의 경로 길이 표준편차는 모든 실행에서 0.0이었다. 정적 지도에서는 계획 결과가 반복마다 같았다.
+- R1-C 정방향에서 NavFn A* 경로가 Dijkstra보다 8.33 m(약 1.9배) 길었고, 역방향에서는 A*가 0.17 m 짧았다.
+  같은 쌍도 방향에 따라 결과가 달라지므로 방향별 계산(INTERFACES §8.4)이 필요하다.
+- 계획 시간은 모든 실행에서 중앙값 1.04 ms 이하였다. A*는 R1-A 양방향과 R1-B 정방향에서 더 빨랐고, R1-B 역방향과 R1-C 양방향에서는 더 느렸다.
+- 실패 응답에서는 planner_server가 `planning_time`을 0으로 보내 빈 값으로 기록했다. `error_msg`는 비어 있었다(Nav2 1.3.14).
+- `roundtrip_time`(약 6~20 ms)은 통신 왕복이 대부분이라 알고리즘 비교에는 `planning_time`을 쓴다.
+
+이 결과는 임시 지도 한 곳에서 계획만 비교한 것이다. 최종 플래너 선정(P-009)에는 공식 지도, Gazebo 주행 비교, 실차 검증(D 협업)이 더 필요하다.
+
+## 다른 담당과 연동할 때
+
+- **D (Nav2):** `config/navfn_compare.yaml`의 NavFn 블록과 위 재현 명령을 공유한다. `amr_navigation` 배포 설정은 바꾸지 않았다.
+  선정 후 배포 설정에 반영할 때는 D와 협의한다. 공식 지도·frame·footprint가 정해지면 같은 값으로 시나리오를 추가한다.
+- **C (비용표):** 비용표를 만들 때는 `planner_id`와 `config_version`을 함께 기록하고, `start` + `use_start: true`로 방향별로 계산한다.
+  `NO_VALID_PATH`·`GOAL_OUTSIDE_MAP`은 실패로 유지한다. 플래너가 확정되기 전까지 비용표의 플래너 기준은 임시다.
+- **E (기록·시각화):** `trials.csv`는 ExperimentResult 열을 앞에 두고 단위는 m·ms다. 예열 행은 `warmup=True`로 표시된다.
+
+## 다음 작업 후보
+
+1. D의 공식 지도와 HOME·A~D 지점이 나오면 `scenarios/<지도>_v1.yaml`을 추가하고, 방향별 쌍을 다시 측정한다.
+2. R1-D 경로 차단: 장애물을 추가한 지도 변형으로 재계획·실패 처리를 비교한다.
+3. D와 Gazebo Harmonic에서 주행 비교를 하고, 이어서 실차 검증(REAL)을 한다.
+4. 결과를 모아 P-009 선정 근거를 A에게 제출한다.
