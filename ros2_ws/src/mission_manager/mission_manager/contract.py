@@ -3,6 +3,7 @@
 from copy import deepcopy
 from graphlib import CycleError, TopologicalSorter
 from math import isfinite
+from uuid import uuid4
 
 from logistics_msgs.msg import TaskStep
 from logistics_msgs.srv import OptimizeRoute
@@ -24,6 +25,8 @@ class MissionState:
         self.order = []
         self.cost_revision = None
         self.latest_request_id = 0
+        self.home_status = 'away'
+        self.attempt_id = None
 
     def add_steps(self, steps):
         """Register complete pickup/dropoff pairs atomically at order intake."""
@@ -113,9 +116,28 @@ class MissionState:
         self.active_version += 1
         return True
 
+    @property
+    def work_completed(self):
+        return bool(self.steps) and self.completed == self.steps.keys()
+
+    def start_home_return(self):
+        if not self.work_completed or self.current or self.order or self.home_status != 'away':
+            return False
+        self.home_status = 'returning'
+        self.attempt_id = uuid4().hex
+        return True
+
+    def arrive_home(self):
+        if self.home_status != 'returning':
+            return False
+        self.home_status = 'home'
+        self.attempt_id = None
+        return True
+
     def start_next(self):
         if self.current is None and self.order:
             self.current = self.order.pop(0)
+            self.attempt_id = uuid4().hex
         return self.current
 
     def arrive(self, step_id):
@@ -128,6 +150,8 @@ class MissionState:
         if mission_id != self.mission_id or step_id != self.current or not self.waiting:
             return False
         self.completed.add(step_id)
+        self.attempt_id = None
+        self.home_status = 'home' if self.steps[step_id].waypoint_id == 'HOME' else 'away'
         self.current = None
         self.waiting = False
         return True

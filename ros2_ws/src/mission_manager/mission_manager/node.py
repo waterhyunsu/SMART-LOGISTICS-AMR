@@ -22,6 +22,7 @@ from mission_manager.persistence import PersistentMission
 class NavigationObservation(Enum):
     ARRIVED = auto()
     NOT_ARRIVED = auto()
+    NO_ACTIVE_GOAL = auto()
     UNKNOWN = auto()
     DISCONNECTED = auto()
     TIMEOUT = auto()
@@ -31,9 +32,21 @@ class NavigationObservation(Enum):
 class RecoveryCheck:
     check_id: str
     mission_id: str
-    step_id: str
+    step_id: str | None
     plan_version: int
     waypoint_id: str
+    attempt_id: str | None
+
+
+@dataclass(frozen=True)
+class NavigationGoal:
+    """Logical D target; step_id=None identifies the standalone HOME return."""
+
+    mission_id: str
+    step_id: str | None
+    plan_version: int
+    waypoint_id: str
+    attempt_id: str | None
 
 
 class MissionManager(Node):
@@ -50,6 +63,7 @@ class MissionManager(Node):
         self.future = None
         self.candidate = None
         self._recovery_check = None
+        self._retry_check = None
         self.plan_status = 'recovery_required' if self.state.recovery_required else 'idle'
         self.timer = self.create_timer(
             min(0.02, self.timeout), self._poll, clock=Clock(clock_type=ClockType.STEADY_TIME),
@@ -62,6 +76,8 @@ class MissionManager(Node):
 
     def register_jobs(self, steps, start_waypoint_id, cost_revision):
         """Order intake boundary; while busy, plan from the current destination."""
+        if self.state.work_completed:
+            raise ValueError('mission has reached its HOME return or completion phase')
         if self.state.current:
             start_waypoint_id = self.state.steps[self.state.current].waypoint_id
         if not start_waypoint_id.strip() or not cost_revision.strip():
@@ -70,6 +86,8 @@ class MissionManager(Node):
         return self.request_plan(start_waypoint_id, cost_revision)
 
     def request_plan(self, start_waypoint_id, cost_revision):
+        if self.state.work_completed:
+            raise ValueError('all delivery steps are complete')
         request = self.state.request(start_waypoint_id, cost_revision)
         self._stop_call()
         self.request = request
@@ -125,15 +143,76 @@ class MissionManager(Node):
         self.plan_status = 'applied' if accepted else 'rejected'
         self.get_logger().info(f'Plan {self.plan_status}, version {self.state.active_version}')
 
+    @property
+    def mission_status(self):
+        if self.state.recovery_required:
+            return 'recovery_required'
+        if self.state.work_completed:
+            return 'completed' if self.state.home_status == 'home' else 'returning_home'
+        return 'active' if self.state.steps else 'idle'
+
+    def step_status(self, step_id):
+        if step_id not in self.state.steps:
+            raise KeyError(step_id)
+        if step_id in self.state.completed:
+            return 'completed'
+        if step_id == self.state.current:
+            return 'waiting_confirmation' if self.state.waiting else 'executing'
+        return 'pending'
+
+    def job_status(self, job_id):
+        """Derive the job outcome from its steps."""
+        steps = [self.step_status(step.step_id) for step in self.state.steps.values()
+                 if step.job_id == job_id]
+        if not steps:
+            raise KeyError(job_id)
+        if all(status == 'completed' for status in steps):
+            return 'completed'
+        return 'active' if any(status != 'pending' for status in steps) else 'pending'
+
+    def current_goal(self):
+        """Read the last claimed target without authorizing another dispatch."""
+        step_id = self.state.current
+        if step_id is not None:
+            waypoint = self.state.steps[step_id].waypoint_id
+        elif self.state.home_status == 'returning':
+            waypoint = 'HOME'
+        else:
+            return None
+        return NavigationGoal(self.state.mission_id, step_id, self.state.active_version,
+                              waypoint, self.state.attempt_id)
+
+    def claim_next_goal(self):
+        """Commit one logical dispatch before returning it to the D adapter."""
+        if (self.state.recovery_required or self.current_goal() is not None or self.request is not None):
+            return None
+        if self.candidate is not None:
+            self._apply_candidate()
+        if self.state.order:
+            self.state.start_next()
+        elif self.mission_status == 'returning_home':
+            self.state.start_home_return()
+        return self.current_goal()
+
+    def handle_navigation_observation(self, goal, observation):
+        """Advance only on arrival for the current logical dispatch."""
+        if (self.state.recovery_required or goal is None or goal != self.current_goal()
+                or observation is not NavigationObservation.ARRIVED):
+            return False
+        if goal.step_id is None:
+            return self.state.arrive_home()
+        return not self.state.waiting and self.arrive(goal.step_id)
+
     def begin_recovery_check(self):
         """Identify the current recovered target for the D adapter."""
         if not self.state.recovery_required:
             raise ValueError('no recovered step awaiting confirmation')
-        step_id = self.state.current
+        goal = self.current_goal()
+        self._retry_check = None
         self._recovery_check = RecoveryCheck(
-            check_id=uuid4().hex, mission_id=self.state.mission_id, step_id=step_id,
-            plan_version=self.state.active_version,
-            waypoint_id=self.state.steps[step_id].waypoint_id)
+            check_id=uuid4().hex, mission_id=goal.mission_id, step_id=goal.step_id,
+            plan_version=goal.plan_version, waypoint_id=goal.waypoint_id,
+            attempt_id=goal.attempt_id)
         return self._recovery_check
 
     def handle_recovery_observation(self, check, observation):
@@ -143,13 +222,25 @@ class MissionManager(Node):
             return False
         if not isinstance(observation, NavigationObservation):
             raise ValueError('expected a NavigationObservation')
-        if observation not in (NavigationObservation.ARRIVED, NavigationObservation.NOT_ARRIVED):
-            self._recovery_check = None
-            return False
-        self.state.reconcile(check.step_id, arrived=observation is NavigationObservation.ARRIVED)
+        if observation in (NavigationObservation.ARRIVED, NavigationObservation.NOT_ARRIVED):
+            self.state.reconcile(check.step_id, arrived=observation is NavigationObservation.ARRIVED)
         self._recovery_check = None
-        self.plan_status = 'applied' if self.state.active_version else 'idle'
-        return True
+        if observation is NavigationObservation.NO_ACTIVE_GOAL:
+            self._retry_check = check
+        if not self.state.recovery_required:
+            self.plan_status = 'applied' if self.state.active_version else 'idle'
+        return observation in (NavigationObservation.ARRIVED, NavigationObservation.NOT_ARRIVED,
+                               NavigationObservation.NO_ACTIVE_GOAL)
+
+    def approve_goal_retry(self, check):
+        """Authorize a single retry after D rules out the previous execution."""
+        if (not self.state.recovery_required or self.state.waiting
+                or self._retry_check is None or check != self._retry_check):
+            return None
+        self.state._commit_recovery_retry(check.attempt_id)
+        self._retry_check = None
+        self.plan_status = 'applied'
+        return self.current_goal()
 
     def arrive(self, step_id):
         return self.state.arrive(step_id)
