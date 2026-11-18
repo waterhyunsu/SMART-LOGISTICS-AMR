@@ -1,0 +1,383 @@
+"""ROS-free core of the B global planner comparison (NavFn A* vs Dijkstra).
+
+Loads scenarios and planner configs, versions them, runs trials through an injected ``plan_fn`` and writes
+ExperimentResult-style CSV/JSON. ``run_compare.py`` binds ``plan_fn`` to Nav2 ComputePathToPose; the tests bind
+it to a fake planner (MOCK).
+"""
+
+import csv
+import hashlib
+import json
+import math
+import os
+import statistics
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
+import yaml
+
+RUN_MODES = ('MOCK', 'SIM', 'REAL')
+EXPECTS = ('success', 'failure')
+
+# docs/INTERFACES.md §4.7 ExperimentResult fields first (units: m, ms), then planner-bench extras.
+# Driving fields (actual_distance, execution_time, goal_success, mission_success, controller_id) stay empty:
+# this bench only plans, it never drives.
+EXPERIMENT_RESULT_FIELDS = [
+    'experiment_id', 'scenario_id', 'run_mode', 'algorithm', 'config_version', 'map_version', 'planner_id',
+    'controller_id', 'planned_distance', 'actual_distance', 'planning_time', 'execution_time', 'goal_success',
+    'mission_success', 'failure_reason']
+EXTRA_FIELDS = [
+    'scenario_set', 'scenario_version', 'pair_id', 'direction', 'repetition', 'order', 'warmup', 'plan_success',
+    'expected', 'expectation_met', 'error_code', 'error_name', 'error_msg', 'roundtrip_time', 'num_poses',
+    'path_end_error', 'start_x', 'start_y', 'start_yaw_deg', 'goal_x', 'goal_y', 'goal_yaw_deg', 'stamp']
+TRIAL_FIELDS = EXPERIMENT_RESULT_FIELDS + EXTRA_FIELDS
+SUMMARY_FIELDS = [
+    'scenario_id', 'pair_id', 'direction', 'expected', 'planner_id', 'algorithm', 'trials', 'plan_successes',
+    'success_rate', 'expectation_met', 'planned_distance_mean', 'planned_distance_std', 'planned_distance_min',
+    'planned_distance_max', 'planning_time_median', 'planning_time_max', 'roundtrip_time_median',
+    'failure_reasons']
+
+
+@dataclass(frozen=True)
+class Pose2D:
+    x: float
+    y: float
+    yaw_deg: float
+
+
+@dataclass(frozen=True)
+class PlanRun:
+    """One directed start -> goal request of a scenario pair."""
+    run_id: str
+    pair_id: str
+    name: str
+    direction: str
+    start: Pose2D
+    goal: Pose2D
+    expect: str
+
+
+@dataclass(frozen=True)
+class ScenarioSet:
+    name: str
+    path: str
+    map_name: str
+    map_yaml: str
+    frame_id: str
+    runs: tuple
+
+
+@dataclass(frozen=True)
+class PlannerConfig:
+    planner_id: str
+    algorithm: str
+    params: dict
+
+
+@dataclass
+class PlanOutcome:
+    """What a planner call returned. ``poses`` are (x, y) in the scenario frame."""
+    success: bool
+    poses: list = field(default_factory=list)
+    planning_time_ms: float | None = None
+    roundtrip_ms: float | None = None
+    error_code: int | None = None
+    error_name: str = ''
+    failure_reason: str = ''
+    error_msg: str = ''
+
+
+def _load_yaml(path):
+    with open(path, encoding='utf-8') as f:
+        return yaml.safe_load(f)
+
+
+def _pose(name, value):
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise ValueError(f'point {name!r}: expected [x, y, yaw_deg]')
+    try:
+        x, y, yaw = (float(v) for v in value)
+    except (TypeError, ValueError):
+        raise ValueError(f'point {name!r}: non-numeric value {value!r}') from None
+    if not all(math.isfinite(v) for v in (x, y, yaw)):
+        raise ValueError(f'point {name!r}: non-finite value {value!r}')
+    return Pose2D(x, y, yaw)
+
+
+def load_scenarios(path):
+    """Read a scenario file into fixed, directed start/goal runs (A->B and B->A are separate runs)."""
+    doc = _load_yaml(path)
+    try:
+        name, map_doc, points, pairs = doc['scenario_set'], doc['map'], doc['points'], doc['pairs']
+        map_name, map_rel = map_doc['name'], map_doc['yaml']
+    except (TypeError, KeyError) as e:
+        raise ValueError(f'{path}: missing key {e}') from None
+    poses = {k: _pose(k, v) for k, v in points.items()}
+    runs, seen = [], set()
+    for pair in pairs:
+        pid = str(pair.get('id', '')).strip()
+        if not pid or pid in seen:
+            raise ValueError(f'missing or duplicate pair id {pid!r}')
+        seen.add(pid)
+        if pair.get('expect') not in EXPECTS:
+            raise ValueError(f'{pid}: expect must be one of {EXPECTS}')
+        a, b = pair.get('from'), pair.get('to')
+        for point in (a, b):
+            if point not in poses:
+                raise ValueError(f'{pid}: unknown point {point!r}')
+        if a == b:
+            raise ValueError(f'{pid}: start and goal are the same point')
+        label = str(pair.get('name', ''))
+        runs.append(PlanRun(f'{pid}:fwd', pid, label, 'fwd', poses[a], poses[b], pair['expect']))
+        if pair.get('reverse', False):
+            runs.append(PlanRun(f'{pid}:rev', pid, label, 'rev', poses[b], poses[a], pair['expect']))
+    map_yaml = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(path)), map_rel))
+    return ScenarioSet(str(name), os.path.abspath(path), str(map_name), map_yaml,
+                       str(map_doc.get('frame_id', 'map')), tuple(runs))
+
+
+def load_planner_configs(path):
+    """NavFn planner plugins from a planner_server params file, in planner_plugins order."""
+    doc = _load_yaml(path)
+    try:
+        params = doc['planner_server']['ros__parameters']
+        ids = params['planner_plugins']
+    except (TypeError, KeyError) as e:
+        raise ValueError(f'{path}: missing planner_server parameter {e}') from None
+    configs = []
+    for pid in ids:
+        plugin = params.get(pid)
+        if not isinstance(plugin, dict) or not str(plugin.get('plugin', '')).startswith('nav2_navfn_planner'):
+            raise ValueError(f'{pid}: not a NavFn planner plugin')
+        if not isinstance(plugin.get('use_astar'), bool):
+            raise ValueError(f'{pid}: use_astar must be true or false')
+        configs.append(PlannerConfig(pid, 'astar' if plugin['use_astar'] else 'dijkstra', dict(plugin)))
+    return configs
+
+
+def config_differences(configs):
+    keys = set().union(*(c.params for c in configs))
+    return sorted(k for k in keys if len({repr(c.params.get(k)) for c in configs}) > 1)
+
+
+def check_comparison_pair(configs):
+    """The comparison is valid only for one A* and one Dijkstra NavFn that differ in nothing but use_astar."""
+    if sorted(c.algorithm for c in configs) != ['astar', 'dijkstra']:
+        raise ValueError('need exactly one NavFn with use_astar: true and one with use_astar: false')
+    diff = config_differences(configs)
+    if diff != ['use_astar']:
+        raise ValueError(f'planner configs must differ only in use_astar, they differ in {diff}')
+
+
+def _digest(paths_and_kinds):
+    h = hashlib.sha256()
+    for path, text in paths_and_kinds:
+        with open(path, 'rb') as f:
+            data = f.read()
+        h.update(data.replace(b'\r\n', b'\n') if text else data)    # same hash on CRLF and LF checkouts
+    return h.hexdigest()[:12]
+
+
+def map_image_path(map_yaml):
+    image = _load_yaml(map_yaml)['image']
+    return image if os.path.isabs(image) else os.path.join(os.path.dirname(map_yaml), image)
+
+
+def config_version(params_path):
+    stem = os.path.splitext(os.path.basename(params_path))[0]
+    return f'{stem}@{_digest([(params_path, True)])}'
+
+
+def map_version(map_name, map_yaml):
+    return f'{map_name}@{_digest([(map_yaml, True), (map_image_path(map_yaml), False)])}'
+
+
+def scenario_version(scenario_path):
+    stem = os.path.splitext(os.path.basename(scenario_path))[0]
+    return f'{stem}@{_digest([(scenario_path, True)])}'
+
+
+def read_pgm_size(path):
+    with open(path, 'rb') as f:
+        data = f.read(1024)
+    tokens, i = [], 0
+    while len(tokens) < 3 and i < len(data):
+        if data[i:i + 1].isspace():
+            i += 1
+        elif data[i:i + 1] == b'#':
+            while i < len(data) and data[i:i + 1] != b'\n':
+                i += 1
+        else:
+            j = i
+            while j < len(data) and not data[j:j + 1].isspace():
+                j += 1
+            tokens.append(data[i:j])
+            i = j
+    if len(tokens) < 3 or tokens[0] not in (b'P2', b'P5'):
+        raise ValueError(f'{path}: not a PGM image')
+    return int(tokens[1]), int(tokens[2])
+
+
+def map_info(map_yaml):
+    """Expected map metadata, compared with what map_server actually publishes."""
+    doc = _load_yaml(map_yaml)
+    width, height = read_pgm_size(map_image_path(map_yaml))
+    return {'width': width, 'height': height, 'resolution': float(doc['resolution']),
+            'origin': [float(v) for v in doc['origin'][:2]]}
+
+
+def path_length(points):
+    return sum(math.dist(a, b) for a, b in zip(points, points[1:]))
+
+
+def end_error(points, goal):
+    return math.dist(points[-1], (goal.x, goal.y)) if points else None
+
+
+def yaw_quaternion(yaw_deg):
+    half = math.radians(yaw_deg) / 2.0
+    return 0.0, 0.0, math.sin(half), math.cos(half)
+
+
+def error_table(result_cls):
+    """{code: NAME} from the integer constants of a ComputePathToPose.Result class."""
+    return {v: k for k, v in vars(result_cls).items()
+            if k.isupper() and isinstance(v, int) and not isinstance(v, bool)}
+
+
+def utc_stamp(now=None):
+    return (now or datetime.now(timezone.utc)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+
+
+def experiment_id(started, run_mode, scenario_set):
+    return f'{started:%Y%m%dT%H%M%SZ}_{run_mode}_{scenario_set}'
+
+
+def _round(value, digits):
+    return '' if value is None else round(value, digits)
+
+
+def _call(plan_fn, planner_id, start, goal):
+    try:
+        return plan_fn(planner_id, start, goal)
+    except Exception as e:   # keep the run going: a client-side error is a recorded failure, not a crash
+        return PlanOutcome(False, failure_reason=f'CLIENT_ERROR:{type(e).__name__}', error_msg=str(e))
+
+
+def run_trials(scenarios, planners, plan_fn, *, repeat, warmup, run_mode, experiment_id, config_version,
+               map_version, scenario_version='', clock=utc_stamp):
+    """Run every scenario run with every planner, ``warmup`` + ``repeat`` times.
+
+    Both planners get the identical start/goal back to back; their order alternates per repetition so neither
+    always runs first. Warmup rows are kept (warmup=True) and excluded from summaries.
+    """
+    if run_mode not in RUN_MODES:
+        raise ValueError(f'run_mode must be one of {RUN_MODES}')
+    if repeat < 1 or warmup < 0:
+        raise ValueError('repeat must be >= 1 and warmup >= 0')
+    rows = []
+    for k in range(warmup + repeat):
+        ordered = list(planners) if k % 2 == 0 else list(reversed(planners))
+        for run in scenarios.runs:
+            for order, cfg in enumerate(ordered, 1):
+                out = _call(plan_fn, cfg.planner_id, run.start, run.goal)
+                ok = bool(out.success and out.poses)
+                if ok:
+                    reason = ''
+                elif out.success:
+                    reason = 'EMPTY_PATH'
+                else:
+                    reason = out.failure_reason or out.error_name or 'UNKNOWN'
+                rows.append({
+                    'experiment_id': experiment_id, 'scenario_id': run.run_id, 'run_mode': run_mode,
+                    'algorithm': cfg.algorithm, 'config_version': config_version, 'map_version': map_version,
+                    'planner_id': cfg.planner_id, 'controller_id': '',
+                    'planned_distance': _round(path_length(out.poses), 4) if ok else '',
+                    'actual_distance': '', 'planning_time': _round(out.planning_time_ms, 3),
+                    'execution_time': '', 'goal_success': '', 'mission_success': '', 'failure_reason': reason,
+                    'scenario_set': scenarios.name, 'scenario_version': scenario_version, 'pair_id': run.pair_id,
+                    'direction': run.direction, 'repetition': k - warmup + 1, 'order': order, 'warmup': k < warmup,
+                    'plan_success': ok, 'expected': run.expect, 'expectation_met': ok == (run.expect == 'success'),
+                    'error_code': '' if out.error_code is None else out.error_code, 'error_name': out.error_name,
+                    'error_msg': out.error_msg, 'roundtrip_time': _round(out.roundtrip_ms, 3),
+                    'num_poses': len(out.poses), 'path_end_error': _round(end_error(out.poses, run.goal), 4),
+                    'start_x': run.start.x, 'start_y': run.start.y, 'start_yaw_deg': run.start.yaw_deg,
+                    'goal_x': run.goal.x, 'goal_y': run.goal.y, 'goal_yaw_deg': run.goal.yaw_deg,
+                    'stamp': clock()})
+    return rows
+
+
+def _stats(values, fn):
+    return round(fn(values), 4) if values else ''
+
+
+def summarize(rows):
+    """Per (scenario run, planner) statistics over non-warmup trials, in first-seen order."""
+    groups = {}
+    for r in rows:
+        if not r['warmup']:
+            groups.setdefault((r['scenario_id'], r['planner_id']), []).append(r)
+    summary = []
+    for (scenario_id, planner_id), rs in groups.items():
+        dist = [r['planned_distance'] for r in rs if r['plan_success']]
+        ptime = [r['planning_time'] for r in rs if r['planning_time'] != '']
+        rtime = [r['roundtrip_time'] for r in rs if r['roundtrip_time'] != '']
+        ok = sum(1 for r in rs if r['plan_success'])
+        summary.append({
+            'scenario_id': scenario_id, 'pair_id': rs[0]['pair_id'], 'direction': rs[0]['direction'],
+            'expected': rs[0]['expected'], 'planner_id': planner_id, 'algorithm': rs[0]['algorithm'],
+            'trials': len(rs), 'plan_successes': ok, 'success_rate': round(100.0 * ok / len(rs), 1),
+            'expectation_met': sum(1 for r in rs if r['expectation_met']),
+            'planned_distance_mean': _stats(dist, statistics.fmean),
+            'planned_distance_std': _stats(dist, statistics.pstdev),
+            'planned_distance_min': _stats(dist, min), 'planned_distance_max': _stats(dist, max),
+            'planning_time_median': _stats(ptime, statistics.median), 'planning_time_max': _stats(ptime, max),
+            'roundtrip_time_median': _stats(rtime, statistics.median),
+            'failure_reasons': ';'.join(sorted({r['failure_reason'] for r in rs if r['failure_reason']}))})
+    return summary
+
+
+def _cell(value):
+    return '-' if value == '' else str(value)
+
+
+def render_summary_md(summary, meta):
+    lines = [
+        f"# {meta['experiment_id']}", '',
+        f"- run_mode: **{meta['run_mode']}** ({meta.get('note') or '-'})",
+        f"- config_version: `{meta['config_version']}` / map_version: `{meta['map_version']}` / "
+        f"scenario_version: `{meta['scenario_version']}`",
+        f"- repeat {meta['repeat']} (+ warmup {meta['warmup']}, excluded) / ROS {meta['env'].get('ros_distro')}"
+        f" / nav2_planner {meta['env'].get('nav2_planner')}",
+        '- planned_distance 는 계획 경로 길이(m)이며 실제 주행 거리가 아니다. planning_time 은 planner_server 가 보고한 값(ms).',
+        '',
+        '| 실행 | 기대 | 플래너 | 성공 | 기대 일치 | 경로 길이 평균 (m) | 표준편차 | 계획 시간 중앙값 (ms) | 최대 | 왕복 중앙값 (ms) | 실패 사유 |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
+    for s in summary:
+        lines.append(
+            f"| {s['scenario_id']} | {s['expected']} | {s['planner_id']} ({s['algorithm']}) "
+            f"| {s['plan_successes']}/{s['trials']} | {s['expectation_met']}/{s['trials']} "
+            f"| {_cell(s['planned_distance_mean'])} | {_cell(s['planned_distance_std'])} "
+            f"| {_cell(s['planning_time_median'])} | {_cell(s['planning_time_max'])} "
+            f"| {_cell(s['roundtrip_time_median'])} | {s['failure_reasons'] or '-'} |")
+    return '\n'.join(lines) + '\n'
+
+
+def _write_csv(path, fields, rows):
+    with open(path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def write_results(out_dir, rows, summary, meta):
+    """Write trials.csv, summary.csv, summary.md and meta.json into a new directory (never overwrites)."""
+    os.makedirs(out_dir, exist_ok=False)
+    _write_csv(os.path.join(out_dir, 'trials.csv'), TRIAL_FIELDS, rows)
+    _write_csv(os.path.join(out_dir, 'summary.csv'), SUMMARY_FIELDS, summary)
+    with open(os.path.join(out_dir, 'summary.md'), 'w', encoding='utf-8') as f:
+        f.write(render_summary_md(summary, meta))
+    with open(os.path.join(out_dir, 'meta.json'), 'w', encoding='utf-8') as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+        f.write('\n')
+    return out_dir
