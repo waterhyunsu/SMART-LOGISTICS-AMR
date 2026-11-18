@@ -25,9 +25,9 @@ ros2 run mission_manager mission_manager --job J1 A HOME --start HOME --cost-rev
 
 - A는 상대 서비스명 `optimize_route`를 사용한다. 서버 탐색과 응답을 합한 제한 시간은 단조 시계로 측정하며 `optimizer_timeout_sec`로 설정한다. 기본 5초는 개발용 설정이다. 실패·시간 초과 시 기존 활성 계획을 보존하며 재계산은 새 요청으로 시작한다.
 - 단일 executor에서 `register_jobs`로 신규 주문을 받아 재요청한다. `state.start_next()`로 현재 단계를 선택하고 `arrive(step_id)`, `handoff(event_id, mission_id, step_id)`로 D·E 결과를 주입할 수 있다. 이 Python 경계는 테스트·후속 어댑터용이다.
-- 현재 단계가 있으면 유효한 응답을 하나만 보류한다. 인계 후 요청 ID·활성 버전·비용표·남은 단계를 다시 검사해 승인한다. 인계 원장은 메모리에 있다.
+- 현재 단계가 있으면 유효한 응답을 하나만 보류한다. 인계 후 요청 ID·활성 버전·비용표·남은 단계를 다시 검사해 승인한다. 인계 원장은 기본 `:memory:` 실행에서는 메모리에, `database_path`에 파일을 지정한 실행에서는 SQLite에 저장된다.
 
-워크스페이스에서 `python3 -m pytest -q src/mission_manager/test/test_dds.py`로 DDS 경계 테스트를 실행한다. Nav2 주행, 실제 웹 이벤트 전송, 재시작 복구는 후속 범위다.
+워크스페이스에서 `python3 -m pytest -q src/mission_manager/test/test_dds.py`로 DDS 경계 테스트를 실행한다. Nav2 주행과 실제 웹 이벤트 전송은 후속 연동 범위다.
 
 ## A 전용 상태 저장과 복구
 

@@ -100,3 +100,76 @@ rclpy.shutdown()
     environment = {**os.environ, 'PYTHONPATH': os.path.dirname(__file__) + os.pathsep + os.environ.get('PYTHONPATH', '')}
     for mode in ('write', 'read'):
         subprocess.run([sys.executable, '-c', code, path, mode], env=environment, check=True, timeout=15)
+
+
+@pytest.mark.parametrize('change', [
+    {'schema': 2}, {'current': 'missing'}, {'waiting': True, 'current': None},
+    {'completed': ['one-d']}, {'order': ['one-d', 'one-d']},
+    {'latest_request_id': -1}, {'active_version': 'bad'},
+    {'handoff_results': {'bad': ['one-d', 'accepted']}},
+])
+def test_corrupt_snapshot_is_rejected_without_rewrite(tmp_path, change):
+    import json
+    path = tmp_path / 'mission.sqlite'
+    state = waiting(path)
+    state.close()
+    with sqlite3.connect(path) as db:
+        values = json.loads(db.execute('SELECT snapshot FROM mission').fetchone()[0])
+        values.update(change)
+        snapshot = json.dumps(values)
+        db.execute('UPDATE mission SET snapshot=?', (snapshot,))
+    with pytest.raises(ValueError):
+        PersistentMission(str(path), 'ignored')
+    with sqlite3.connect(path) as db:
+        assert db.execute('SELECT snapshot FROM mission').fetchone()[0] == snapshot
+
+
+def test_recovery_keyword_replay_and_guard(tmp_path):
+    path = tmp_path / 'mission.sqlite'
+    state = waiting(path)
+    assert state.handoff('bad', 'mission', 'one-d') == 'rejected'
+    state.close()
+    state = PersistentMission(str(path), 'ignored')
+    assert state.handoff(event_id='bad', mission_id='mission', step_id='one-d') == 'rejected'
+    for name, args in [('add_steps', [job('two')]), ('request', ['A', 'r1']),
+                       ('start_next', []), ('arrive', ['one-p']),
+                       ('handoff', ['new', 'mission', 'one-p'])]:
+        with pytest.raises(RuntimeError):
+            getattr(state, name)(*args)
+    state.close()
+
+
+def test_process_exit_before_commit_rolls_back(tmp_path):
+    path = tmp_path / 'mission.sqlite'
+    state = waiting(path)
+    state.close()
+    code = """
+import os, sqlite3, sys
+from mission_manager.persistence import PersistentMission
+s = PersistentMission(sys.argv[1], 'ignored')
+s.reconcile('one-p', arrived=True)
+s.db.set_trace_callback(lambda statement: os._exit(0) if statement == 'COMMIT' else None)
+s.handoff('done', 'mission', 'one-p')
+raise AssertionError('COMMIT hook did not exit')
+"""
+    subprocess.run([sys.executable, '-c', code, str(path)], check=True, timeout=10)
+    state = PersistentMission(str(path), 'ignored')
+    assert state.current == 'one-p' and state.waiting
+    assert not state.completed and 'done' not in state.handoff_results
+    state.close()
+
+
+def test_locked_database_never_acknowledges(tmp_path):
+    path = tmp_path / 'mission.sqlite'
+    state = waiting(path)
+    state.db.execute('PRAGMA busy_timeout=1')
+    other = sqlite3.connect(path)
+    other.execute('BEGIN IMMEDIATE')
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            state.handoff('done', 'mission', 'one-p')
+        assert state.waiting and not state.completed and not state.handoff_results
+    finally:
+        other.rollback()
+        other.close()
+        state.close()

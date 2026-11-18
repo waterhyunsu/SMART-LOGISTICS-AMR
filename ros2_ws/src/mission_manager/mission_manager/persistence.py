@@ -24,13 +24,11 @@ class PersistentMission:
         self.revision = row[0] if row else 0
         self.recovered = row is not None
         if row:
-            values = json.loads(row[1])
-            if values.pop('schema') != 1:
-                raise ValueError('unsupported mission snapshot schema')
-            steps = [TaskStep(**step) for step in values.pop('steps')]
-            self._state = MissionState(values['mission_id'], steps)
-            values['completed'] = set(values['completed'])
-            self._state.__dict__.update(values)
+            try:
+                self._state = self._restore(row[1])
+            except (ValueError, TypeError, KeyError, AssertionError) as error:
+                self.db.close()
+                raise ValueError('invalid mission snapshot') from error
         else:
             self._state = MissionState(mission_id, [])
         self.recovery_required = bool(self.recovered and self._state.current)
@@ -38,6 +36,61 @@ class PersistentMission:
         candidate = deepcopy(self._state)
         candidate.pending_request_id = None
         self._commit(candidate)
+
+    @staticmethod
+    def _restore(snapshot):
+        values = json.loads(snapshot)
+        if values.pop('schema') != 1:
+            raise ValueError('unsupported mission snapshot schema')
+        steps = [TaskStep(**step) for step in values['steps']]
+        state = MissionState(values['mission_id'], steps)
+        if set(values) != set(state.__dict__):
+            raise ValueError('snapshot fields do not match schema')
+        for field in ('active_version', 'latest_request_id'):
+            if type(values[field]) is not int or not 0 <= values[field] < 2**64:
+                raise ValueError('invalid version counter')
+        pending = values['pending_request_id']
+        if pending is not None and (
+                type(pending) is not int or not 0 < pending <= values['latest_request_id']):
+            raise ValueError('invalid pending request')
+        if type(values['waiting']) is not bool:
+            raise ValueError('invalid waiting flag')
+        current = values['current']
+        if current is not None and current not in state.steps:
+            raise ValueError('unknown current step')
+        if values['waiting'] and current is None:
+            raise ValueError('waiting without current step')
+        revision = values['cost_revision']
+        if revision is not None and (not isinstance(revision, str) or not revision.strip()):
+            raise ValueError('invalid cost revision')
+        for field in ('completed', 'order'):
+            items = values[field]
+            if (not isinstance(items, list) or len(items) != len(set(items))
+                    or not set(items) <= state.steps.keys()):
+                raise ValueError('invalid step collection')
+        completed = set(values['completed'])
+        if current in completed or completed.intersection(values['order']) or current in values['order']:
+            raise ValueError('overlapping step states')
+        for key in completed:
+            if not completed.issuperset(state.steps[key].prerequisite_ids):
+                raise ValueError('completed step has incomplete prerequisites')
+        seen = completed.copy()
+        for key in ([current] if current else []) + values['order']:
+            if not seen.issuperset(state.steps[key].prerequisite_ids):
+                raise ValueError('plan violates prerequisites')
+            seen.add(key)
+        events = values['handoff_results']
+        if not isinstance(events, dict):
+            raise ValueError('invalid event ledger')
+        for event_id, result in events.items():
+            if (not event_id.strip() or not isinstance(result, list) or len(result) != 2
+                    or not isinstance(result[0], str) or result[1] not in ('accepted', 'rejected')
+                    or (result[1] == 'accepted' and result[0] not in completed)):
+                raise ValueError('invalid event result')
+        values['steps'] = state.steps
+        values['completed'] = completed
+        state.__dict__.update(values)
+        return state
 
     def _commit(self, candidate):
         values = deepcopy(candidate.__dict__)
@@ -63,7 +116,7 @@ class PersistentMission:
         if name in self.transitions:
             def transition(*args, **kwargs):
                 if self.recovery_required:
-                    if name == 'handoff' and args[0] in self._state.handoff_results:
+                    if name == 'handoff' and (args[0] if args else kwargs.get('event_id')) in self._state.handoff_results:
                         # Replay stored results, including key conflicts, without a new transition.
                         return self._state.handoff(*args, **kwargs)
                     raise RuntimeError('external step reconciliation required after restart')
