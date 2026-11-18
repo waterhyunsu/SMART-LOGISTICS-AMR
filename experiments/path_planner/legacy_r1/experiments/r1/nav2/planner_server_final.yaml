@@ -1,0 +1,18 @@
+# 연구 1 결과로 확정한 Nav2 전역 플래너 설정 (기획안 5.6-7, 5.7 "확정된 Nav2 플래너 설정")
+#   NavFn, use_astar: false (Dijkstra). 근거: experiments/r1/README.md 8절
+#   - 계획: 경로 비용·길이가 A* 모드보다 길어지는 일이 없음 (A* 모드는 강의실에서 최대 +81%)
+#   - 주행 (Gazebo, 5회 x 7조건): 도달 35/35, 복구 동작 0회 (A* 모드 87회), 총 주행 시간 23% 짧음
+#   - 계산 시간 0.4~0.9 ms (강의실 맵) 로 1 Hz 재계획에 충분
+# 사용: 팀 공통 Nav2 파라미터 파일의 planner_server 항목을 이것으로 바꾼다 (다른 노드 설정은 그대로).
+#   planner_id 는 Nav2 기본 BT 가 쓰는 "GridBased" 그대로 두어 기본 BT·NavigateToPose 를 고치지 않아도 된다.
+# 실차(D 담당) 검증과 통합 미션 회귀 검증(5.6-5, 9) 후 바뀌면 이 파일과 README 를 함께 고친다.
+planner_server:
+  ros__parameters:
+    use_sim_time: False          # 시뮬레이션에서는 True (launch 의 use_sim_time 이 덮어씀)
+    expected_planner_frequency: 20.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner/NavfnPlanner"
+      use_astar: false           # Dijkstra. true(A*) 는 좌석·장애물 사이에서 돌아가는 경로가 나와 쓰지 않음
+      tolerance: 0.5             # 목표 칸에 갈 수 없으면 0.5 m 안에서 가장 가까운 칸까지 (Nav2 기본값)
+      allow_unknown: true        # Nav2 기본값. 맵의 미탐색 칸은 벽 바깥뿐이라 결과에 영향 없음 (실물 SLAM 맵에서 다시 확인)

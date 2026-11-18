@@ -1,0 +1,15 @@
+{
+  "mode": "navfncore",
+  "world": "warehouse_large",
+  "from_nav2plan": "20261117-075953_nav2plan_warehouse_large",
+  "costmaps": {
+    "base": "experiments/r1/results/20261117-075953_nav2plan_warehouse_large/costmaps/base.bin",
+    "map_L-D1": "experiments/r1/results/20261117-075953_nav2plan_warehouse_large/costmaps/map_L-D1.bin",
+    "map_L-D2": "experiments/r1/results/20261117-075953_nav2plan_warehouse_large/costmaps/map_L-D2.bin"
+  },
+  "bench": "experiments/r1/nav2/navfn_bench.cpp",
+  "allow_unknown": true,
+  "tolerance": 0.5,
+  "config_version": "70e232e5-nb4ca30-mbb536c",
+  "rows": 2800
+}

@@ -1,0 +1,15 @@
+{
+  "mode": "navfncore",
+  "world": "lecture_hall_real",
+  "from_nav2plan": "20261117-022910_nav2plan_lecture_hall_real",
+  "costmaps": {
+    "base": "experiments/r1/results/20261117-022910_nav2plan_lecture_hall_real/costmaps/base.bin",
+    "map_R1-D1": "experiments/r1/results/20261117-022910_nav2plan_lecture_hall_real/costmaps/map_R1-D1.bin",
+    "map_R1-D2": "experiments/r1/results/20261117-022910_nav2plan_lecture_hall_real/costmaps/map_R1-D2.bin"
+  },
+  "bench": "experiments/r1/nav2/navfn_bench.cpp",
+  "allow_unknown": true,
+  "tolerance": 0.5,
+  "config_version": "4f2c662a-n6d95dc-m5249d1",
+  "rows": 2800
+}

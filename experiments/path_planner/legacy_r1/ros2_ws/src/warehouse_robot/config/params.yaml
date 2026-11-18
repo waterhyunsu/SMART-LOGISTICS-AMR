@@ -1,0 +1,110 @@
+astar_planner:
+  ros__parameters:
+    map_topic: map
+    robot_radius: 0.24        # (m) Larger than body half-width 0.153 + margin, so gaps A* plans through are also passable for the local planner.
+                              # The in-place rotation circle (rear corner 0.238, rear attachment 0.28) is handled by the pre-rotation check
+    inflation_radius: 0.55    # Cost is added up to this distance to keep away from walls
+    cost_weight: 3.0
+    occupied_threshold: 65
+    allow_unknown: false
+    goal_tolerance: 0.3       # If the goal is against a wall, use the nearest free cell within this radius
+    algorithm: astar          # Graph search: astar (octile heuristic) | dijkstra (same search, heuristic 0). Changeable at runtime.
+                              # Research 1 compares the two (experiments/r1/README.md, tools/r1_bench.py)
+    scan_obstacles: true      # Temporarily remember LiDAR obstacles not in the map and use them in planning
+    scan_memory: 20.0         # Obstacle memory time (s)
+    scan_max_range: 5.0       # Ignore LiDAR points farther than this (m). Same 5 m as SLAM/AMCL
+    scan_wall_margin: 0.15    # Points within this distance of a map wall are treated as the wall and ignored (m)
+    # When remembered obstacles leave no path:
+    # 1) retry with only the radius reduced to fallback_radius (body half-width 0.153 + slow Frenet margin 0.04 -> gaps down to 0.40 m, passed at 0.05 m/s)
+    # 2) if still none, use only obstacles seen again within the last scan_recent s (drops stale memory such as people who passed or scans smeared while rotating)
+    # 3) if still none, fail as 'no gap to pass' (map only if that object was not seen recently)
+    fallback_radius: 0.20     # (m)
+    scan_recent: 3.0          # (s)
+    bump_memory: 120.0        # How long a bump spot (low object invisible to LiDAR) is remembered as an obstacle (s)
+    bump_radius: 0.15         # Radius blocked around a bump spot (0.25 m ahead of the robot) (m). Too large blocks narrow passages entirely
+    # Map preprocessing for planning (existing-map mode only, plan_map.py; AMCL uses the original map). Result on topic astar/plan_map
+    stripe_cells: 2           # Unexplored stripes narrower than 4 cells (20 cm) between free cells -> free (gaps between distant LiDAR beams). 0 disables
+    cluster_inflate: 0.1      # Inflate desk/chair leg points (small clusters) -> gaps between legs under 2*(0.25+0.1)=0.7 m are blocked (m). 0 disables
+    cluster_max_size: 0.4     # Obstacle clusters longer than this in x or y (walls, desk fronts) are not inflated (m)
+    start_clear_radius: 0.35  # Area around the start is excluded from inflated points/keep-out zones (so the robot can get out if standing inside) (m)
+
+warehouse_bridge:
+  ros__parameters:
+    server_url: ws://localhost:8000/ws/robot/tb3/
+    map_name: default         # Map name stored in the server DB (location coordinates are tied to this map)
+    map_topic: map
+    global_frame: map
+    base_frame: base_footprint
+    pose_rate: 5.0
+    max_retries: 2
+    footprint: [-0.197, 0.069, 0.153]   # Waffle Pi outer rectangle (x_min, x_max, half-width). Frenet collision check, back-off/rotation clearance
+    footprint_extra: [-0.277, -0.197, -0.04, 0.04]   # Rectangles of objects attached to the body (x_min, x_max, y_min, y_max) x N. 8x8 cm at rear center. Frenet collision check, in-place rotation/reverse clearance, robot shape on the web
+    stop_distance: 0.35       # If the body is tilted and the front ±25° is blocked within this distance (from LiDAR), assume it is stuck on an obstacle and back off
+    estop_distance: 0.2       # Do not move forward if the front ±25° is within this distance (from LiDAR, about 7 cm from the body front) (emergency stop)
+    blocked_timeout: 5.0      # Blocked longer than this -> replan around the obstacle; fail once retries are used up (s)
+    progress_timeout: 15.0    # Fail if the robot does not move 5 cm within this time (s)
+    tf_timeout: 0.5           # If the robot pose (/odom, Pi -> Wi-Fi) is older than this, stop immediately. The goal is kept and resumed when it returns (s)
+    pose_lost_timeout: 3.0    # Fail the goal only if the pose stays missing longer than this (s). Wi-Fi delays are typically 0.3-0.7 s
+    rotate_timeout: 15.0      # If in-place rotation takes longer than this, stop and replan/fail (s)
+    bump_tilt_deg: 6.0        # Tilt above this while driving is treated as a bump (riding onto a low obstacle): stop and back off (deg)
+    stall_timeout: 2.5        # If commanded forward but not moving 3 cm in this time, treat as bumped/stuck (s)
+    backoff_distance: 0.15    # Distance to back off after a bump (m). Then replan avoiding the bump spot
+    battery_cells: 3          # Number of LiPo cells for battery % (TurtleBot3 11.1 V = 3 cells)
+    battery_empty_v: 11.0     # This voltage is shown as 0% (TurtleBot3 warns to charge below 11 V)
+    # Moving obstacle tracking (ported from tb3_nav obstacle_tracker). Orange circles + velocity arrows on the web map; Frenet predicts and avoids them
+    tracking:
+      enabled: true
+      moving_speed: 0.08      # Only tracks faster than this are predicted/shown as moving (above the velocity noise of stationary objects, below a slow walking person)
+      max_range: 5.0          # LiDAR range used for tracking + Frenet static obstacles (m). Same 5 m as SLAM/AMCL
+      static_match_dist: 0.15 # Points within this distance of a map wall are static (allows for AMCL error)
+      cluster_gap: 0.25
+      min_points: 2
+      max_diameter: 0.8       # Clusters larger than this (walls etc.) are not treated as obstacles
+      min_radius: 0.05
+      gate: 0.55              # Within this distance of a previous track -> same object
+      min_hits: 5             # Must be seen this many times in a row to be confirmed
+      max_misses: 5
+      accel_noise: 1.8
+      meas_noise: 0.13
+      max_speed: 1.5
+    # Frenet local planner (frenet.py). Uses the A* path as the reference line and picks the safe, cheapest trajectory among
+    # 'lateral offset x shift/hold distance x speed' candidates.
+    # Static obstacles are checked by distance (check_dist), moving objects by time (horizon). Changeable at runtime (except list values)
+    frenet:
+      target_speed: 0.15      # (m/s) Candidate speeds: this value and n_speed more, each lower by speed_step
+      speed_step: 0.05
+      n_speed: 2
+      max_speed: 0.18
+      max_accel: 0.3          # Speed profile acceleration/deceleration (m/s²)
+      max_w: 1.82             # Candidate angular velocity limit |v·κ| (rad/s)
+      rotate_speed: 1.0       # Turning in place before starting (rad/s). SLAM mode uses 0.6 (bridge)
+      max_offset: 0.3         # Lateral offset candidates ±(m). Aisles are about 0.9 m
+      offset_step: 0.025      # Fine enough to center the robot in narrow gaps
+      lateral_dists: [0.8]    # Candidate length (m): a single polynomial, parallel at the end offset at this distance. Also checked up to this length (no hold/return).
+                              # Longer stops early in front of narrow gaps; shorter or multiple lengths cause more switching and turning
+      via_ratio: 0.5          # A middle offset is chosen separately at candidate length x this value -> 6th order (7 conditions). 0 = 5th order
+      end_offset_step: 0.025  # End offset step (middle offset uses offset_step). Coarser steps cannot align with narrow gaps
+      fine_offset: 0.1        # The step above (2.5 cm) is used only for |offset| ≤ 0.1, coarse_offset_step outside. 17 middle x 17 end x 3 speeds = 867
+      coarse_offset_step: 0.05  # Chosen offsets are mostly within ±0.1, so a coarser step outside saves computation.
+                              # Trade-off: slightly larger w jumps when switching candidates
+      horizon: 4.0            # Time horizon for checking moving objects (s)
+      safety_margin: 0.06     # Minimum clearance between body and obstacles (constraint). Larger values cannot pass narrow gaps
+      safety_margin_slow: 0.04  # Static clearance of the slowest candidate (0.05 m/s). Linear for speeds in between (0.10 m/s -> 0.05). Narrow gaps are crept through slowly
+      clear_pref: 0.15        # Cost when clearance is below this (prefers the middle of a gap)
+      dynamic_margin: 0.15    # Extra clearance for moving objects (m)
+      dynamic_growth: 0.03    # Clearance increase per second of prediction
+      w_offset: 0.0           # Cost weights: deviation from path (mean |d|, off: uses end offset²) / offset change / turning slope (off: uses jerk) / slowness / static clearance / moving object clearance
+      w_change: 1.0           # 1/4 when returning toward the path. Too low lets the offset change every cycle in tight spots, making w jitter
+      w_turn: 0.0
+      w_speed: 1.0
+      w_clear: 1.0
+      w_dynamic: 1.0
+      # Werling (2010) low-speed lateral cost terms
+      w_end: 1.0              # end offset²
+      w_jerk: 0.3             # ∫ d'''² ds
+      w_len: 0.0              # candidate length S / longest (Werling kt*S). Off: with a single lateral_dists value every candidate gets the same term. Set > 0 when using several lengths
+    # Drive record: logs/records/<bridge start time>_frenet/<time>_<goal>/record.jsonl.gz (pose/cmd/tracks/scan every 0.1 s,
+    # plus Frenet inputs and per-candidate checks/costs). Analyze with: python3 tools/drive_replay.py. About 2 MB per minute
+    record:
+      enabled: true
+      plots: true             # When a goal ends, write summary.txt + key-moment plot_*.png to that folder (tools/drive_replay.py, low priority)

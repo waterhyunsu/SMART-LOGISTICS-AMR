@@ -1,0 +1,12 @@
+# 이전 저장소(team_project2)의 줄바꿈 규칙을 이 폴더에 한해 유지한다.
+# Windows(core.autocrlf=true)에서 받아도 리눅스에서 실행하는 파일이 CRLF 로 바뀌지 않게 한다.
+*.sh          text eol=lf
+*.py          text eol=lf
+*.launch.py   text eol=lf
+*.yaml        text eol=lf
+*.world       text eol=lf
+
+# 실험 원자료(맵·costmap 스냅샷·그림)는 바이트 그대로 보존한다.
+*.pgm         binary
+*.bin         binary
+*.png         binary
