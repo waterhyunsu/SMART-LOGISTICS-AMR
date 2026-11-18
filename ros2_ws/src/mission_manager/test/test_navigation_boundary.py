@@ -78,6 +78,8 @@ def test_persist_before_submit_and_at_most_once(tmp_path):
         assert boundary.submit_once(ticket, d.send_active)
         assert not boundary.submit_once(ticket, d.send_active)
         assert len(d.sent) == 1
+        assert not node.handle_navigation_observation(
+            goal, NavigationObservation.ARRIVED)  # bound UUID is required
         assert not boundary.observe(
             DispatchTicket(goal, '0' * 32), NavigationObservation.ARRIVED)
         assert boundary.observe(ticket, NavigationObservation.ARRIVED)
