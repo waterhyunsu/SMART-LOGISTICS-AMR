@@ -19,6 +19,7 @@
 
 | 경로 | 내용 |
 | --- | --- |
+| [`REPORT.md`](REPORT.md) | 기술 선정 보고서 (기획서 §12.4 양식, 작성 중) |
 | [`config/navfn_compare.yaml`](config/navfn_compare.yaml) | planner_server 하나에 NavFn 두 개(`NavFnAStar`, `NavFnDijkstra`). `use_astar`만 다르고 같은 global costmap을 쓴다 |
 | [`scenarios/lecture_hall_v1.yaml`](scenarios/lecture_hall_v1.yaml) | 고정 지점과 쌍: R1-A 개방, R1-B 장애물 우회, R1-C 좁은 통로(각각 정·역방향), FAIL-WALLED(벽으로 막힌 영역), FAIL-OFFMAP(지도 밖 목표) |
 | [`launch/planner_bench.launch.py`](launch/planner_bench.launch.py) | planner-only 스택: map_server + planner_server + lifecycle_manager + 정적 TF `map → base_footprint` |
@@ -75,6 +76,22 @@ bash experiments/path_planner/scripts/run_planner_only.sh experiments/path_plann
 ```bash
 python3 -m pytest experiments/path_planner/tests -q      # PyYAML, pytest 필요. ROS 불필요
 ```
+
+## 실행 환경 차이 — 다른 PC 결과와 비교할 때
+
+팀 기준은 Ubuntu 24.04 + ROS 2 Jazzy + Python 3.12다. Docker 이미지도 같은 기준(`ros:jazzy-ros-base`, Ubuntu 24.04)이라 코드와 설정은 그대로 쓸 수 있다.
+다만 환경에 따라 비교할 수 있는 값이 다르다.
+
+| 값 | 환경 영향 | 다룰 방법 |
+| --- | --- | --- |
+| 경로 길이·성공 여부·오류 코드 | Nav2 버전·설정·지도가 같으면 플랫폼과 무관해야 한다. **[미확인]** 다른 환경에서는 아직 교차 실행하지 않았다 | 네이티브 Ubuntu나 Mac VM에서 같은 명령을 실행하고 `summary.csv`의 `planned_distance`를 비교한다 |
+| `planning_time`, `roundtrip_time` | CPU와 가상화 방식(WSL2·Docker, UTM VM, 로봇 PC)에 따라 달라진다 | 같은 실험(같은 세션) 안에서 A*와 Dijkstra만 비교한다. 다른 PC 결과와 절대값을 비교하지 않는다 |
+| Nav2 버전 | Docker 이미지는 빌드 시점의 최신 apt 패키지를 받는다 (현재 1.3.14) | `meta.json`의 `env.nav2_planner`를 확인한다. 버전이 다르면 결과를 따로 본다 |
+| Mac (ARM64) | macOS에서는 Jazzy를 직접 실행하지 않고 Ubuntu VM이나 Docker를 쓴다. `ros:jazzy-ros-base`에는 arm64 이미지가 있다. **[미확인]** 이 Dockerfile로 arm64 빌드는 해 보지 않았다 | VM 결과는 VM 환경 결과로 표시한다 (AGENTS.md §7) |
+| 실차(REAL) | WSL2 기본 네트워크(NAT)의 Docker에서는 로봇과 DDS 탐색이 되지 않는다 | REAL 실험은 로봇과 같은 네트워크의 Ubuntu PC에서 C·D와 조율해 진행한다 **[초안-팀합의필요]** |
+| Gazebo Harmonic 주행 | Docker에서 GUI·GPU 렌더링(LiDAR 센서)은 추가 설정이 필요하다. legacy 월드는 Gazebo Classic 형식이다 | 주행 비교는 D의 Nav2 실행 환경에서 함께 진행한다 **[초안-팀합의필요]** |
+
+결과의 실행 환경은 `meta.json`의 `env`(ROS·Nav2 버전, `bench_env`, 플랫폼, CPU 수)에 남는다.
 
 ## 결과 형식
 
@@ -139,4 +156,5 @@ Gazebo·AMCL·LiDAR는 쓰지 않았다. 예열 1회와 측정 30회.
 1. D의 공식 지도와 HOME·A~D 지점이 나오면 `scenarios/<지도>_v1.yaml`을 추가하고, 방향별 쌍을 다시 측정한다.
 2. R1-D 경로 차단: 장애물을 추가한 지도 변형으로 재계획·실패 처리를 비교한다.
 3. D와 Gazebo Harmonic에서 주행 비교를 하고, 이어서 실차 검증(REAL)을 한다.
-4. 결과를 모아 P-009 선정 근거를 A에게 제출한다.
+4. 팀원 환경(네이티브 Ubuntu 또는 Mac VM)에서 같은 명령을 실행해 경로 길이가 일치하는지 교차 확인한다.
+5. 결과를 모아 [`REPORT.md`](REPORT.md)를 채우고, P-009 선정 근거를 A에게 제출한다.
