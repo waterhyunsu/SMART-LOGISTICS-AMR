@@ -106,13 +106,14 @@ D 어댑터는 이전 Goal ID와 실행 컨텍스트를 대조해 기존 실행�
    현재 Mission·Step·Plan Version·Attempt ID와 저장된 Nav2 Goal UUID가 모두
    일치해야 도착 결과를 반영한다. A 내부의 기존 테스트용
    `handle_navigation_observation`을 외부 D가 직접 호출해서는 안 된다.
-4. A 재시작 후에는 `begin_recovery_lookup()`으로 복원된 시도 컨텍스트와
+4. 송신 콜백이 예외를 던지면 A는 현재 선점·시도 ID·UUID를 유지하고 복구 제한에 들어간 뒤 원래 예외를 호출자에게 전달한다. 비동기 콜백이 반환된 뒤 수락 확인이 시간 초과되거나 결과가 불확실하면 D 어댑터는 `report_dispatch_uncertain(ticket)`을 호출한다. 정상 콜백 반환은 수락 확인과 별개이며 복구를 시작하지 않는다.
+5. 같은 프로세스에서 복구 제한에 들어갔거나 A가 재시작한 경우 `begin_recovery_lookup()`으로 저장된 시도 컨텍스트와
    Nav2 UUID를 D에 제공한다. D는 Nav2 활성 Goal뿐 아니라 아직 송신 가능한
    **지연된 큐·전송 중 요청**도 확인해야 한다. 실행 중인 Goal도 없고 뒤늦은
    송신 가능성도 배제한 경우에만 `RecoveryReport(lookup,
    NavigationObservation.NO_ACTIVE_GOAL, no_pending_dispatch=True)`를 반환한다.
    `NOT_ARRIVED`, `UNKNOWN`, `TIMEOUT`만으로 실행 부재를 확정하지 않는다.
-5. A는 해당 보고를 수용한 뒤에도 `approve_retry(lookup,
+6. A는 해당 보고를 수용한 뒤에도 `approve_retry(lookup,
    explicitly_approved=True)`를 **별도로 호출**해야 한다. 승인 시 새로운 시도
    ID가 SQLite에 저장되고 이전 Nav2 UUID 매핑은 해제된다. 이후 새 시도에 대해
    `prepare_dispatch` → `submit_once` 순서로 D에 전송한다.
@@ -130,5 +131,6 @@ MOCK 테스트 (Jazzy overlay 적용 후):
 python3 -m pytest -q src/mission_manager/test/test_navigation_boundary.py
 ```
 
-미검증: 실제 Jazzy 전체 빌드·테스트 재실행, Nav2 UUID/Action API, D의 실행
-부재 증빙 및 지연 전송 배제, 실제 D 프로세스/로봇 통신, 실차 주행.
+UUID 저장은 외부 송신 전에 완료된다. 송신 실패 시 기존 저장값을 유지하며, 재시작 시 선점된 목표에서 복구 제한을 복원한다. DB COMMIT과 외부 송신은 별도 단계이므로 재시도 전에 D가 실행 및 지연 송신 부재를 확인해야 한다.
+
+실제 Nav2 UUID/Action API, D의 실행 부재 증빙 및 지연 송신 배제, D 프로세스와 로봇 통신, 실차 주행은 후속 연동 검증 범위다.

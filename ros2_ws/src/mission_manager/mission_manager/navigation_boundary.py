@@ -63,8 +63,18 @@ class NavigationDispatchBoundary:
                 or self.manager.state.nav_goal_id != ticket.nav_goal_id):
             return False
         self._prepared.remove(ticket.nav_goal_id)
-        sender(ticket)
+        try:
+            sender(ticket)
+        except Exception:
+            self.report_dispatch_uncertain(ticket)
+            raise
         return True
+
+    def report_dispatch_uncertain(self, ticket):
+        """Hold the current attempt after send failure or an inconclusive acceptance."""
+        if not isinstance(ticket, DispatchTicket) or ticket.nav_goal_id in self._prepared:
+            return False
+        return self.manager.require_dispatch_recovery(ticket.goal, ticket.nav_goal_id)
 
     def observe(self, ticket, observation):
         """Ignore any result not matching the current attempt AND Nav2 UUID."""
@@ -85,7 +95,8 @@ class NavigationDispatchBoundary:
 
     def handle_recovery_report(self, report):
         """NO_ACTIVE_GOAL also requires proof that delayed dispatch is excluded."""
-        if (not isinstance(report, RecoveryReport) or report.lookup != self._lookup
+        if (self._lookup is None or not isinstance(report, RecoveryReport)
+                or report.lookup != self._lookup
                 or report.lookup.nav_goal_id != self.manager.state.nav_goal_id
                 or not isinstance(report.observation, NavigationObservation)):
             return False
@@ -102,7 +113,7 @@ class NavigationDispatchBoundary:
 
     def approve_retry(self, lookup, *, explicitly_approved=False):
         """A authorizes one retry after trusted D absence proof; no auto-send."""
-        if (explicitly_approved is not True or lookup != self._absence
+        if (explicitly_approved is not True or self._absence is None or lookup != self._absence
                 or self.manager.state.recovery_required is not True):
             return None
         goal = self.manager.approve_goal_retry(lookup.check)

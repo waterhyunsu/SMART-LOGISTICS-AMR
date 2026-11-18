@@ -9,6 +9,7 @@ from mission_manager.navigation_boundary import (
     DispatchTicket, NavigationDispatchBoundary, RecoveryReport,
 )
 from mission_manager.node import NavigationObservation
+from mission_manager.persistence import RecoveryPending
 from test_contract import mock_optimizer
 from test_dds import job
 from test_orchestration import complete_goal
@@ -251,3 +252,85 @@ def test_legacy_snapshot_without_mapping_still_requires_observation(tmp_path):
         assert lookup.nav_goal_id is None
         assert lookup.check.attempt_id == original.goal.attempt_id
         assert node.state.recovery_required
+
+
+@pytest.mark.parametrize('home', [False, True])
+@pytest.mark.parametrize('ambiguous', ['exception', 'timeout'])
+def test_indeterminate_send_can_recover_in_same_process(tmp_path, home, ambiguous):
+    path = tmp_path / 'uncertain.sqlite'
+    with manager(path) as node:
+        steps = job('one')
+        if home:
+            steps[-1].waypoint_id = 'B'
+        state = node.state
+        state.add_steps(steps)
+        assert state.apply(mock_optimizer(state.request('HOME', 'r1')))
+        web = FakeWeb(node)
+        if home:
+            for _ in steps:
+                complete_goal(node, web, node.claim_next_goal())
+        bridge = NavigationDispatchBoundary(node)
+        d = FakeD()
+        original = bridge.prepare_dispatch(node.claim_next_goal())
+
+        def sender(ticket):
+            d.send_pending(ticket)
+            if ambiguous == 'exception':
+                raise ConnectionError('delivery unknown')
+
+        if ambiguous == 'exception':
+            with pytest.raises(ConnectionError):
+                bridge.submit_once(original, sender)
+        else:
+            assert not bridge.report_dispatch_uncertain(original)  # still unsent
+            assert bridge.submit_once(original, sender)
+            assert not state.recovery_required
+            assert bridge.report_dispatch_uncertain(original)
+
+        assert state.recovery_required and state.nav_goal_id == original.nav_goal_id
+        assert node.current_goal() == original.goal and node.claim_next_goal() is None
+        assert not bridge.submit_once(original, sender)
+        assert not bridge.observe(original, NavigationObservation.ARRIVED)
+        if not home:
+            with pytest.raises(RecoveryPending):
+                web.send('unconfirmed', original.goal.step_id)
+
+        assert bridge.approve_retry(None, explicitly_approved=True) is None
+        first = bridge.begin_recovery_lookup()
+        assert not bridge.handle_recovery_report(d.inspection(first))
+        d.send_active(original)
+        lookup = bridge.begin_recovery_lookup()
+        assert not bridge.handle_recovery_report(d.inspection(lookup))
+        assert bridge.approve_retry(lookup, explicitly_approved=True) is None
+        d.active.clear()
+        lookup = bridge.begin_recovery_lookup()
+        assert not bridge.handle_recovery_report(
+            RecoveryReport(lookup, NavigationObservation.NO_ACTIVE_GOAL))
+        assert not bridge.handle_recovery_report(
+            RecoveryReport(first, NavigationObservation.ARRIVED))
+        d.rule_out_all_late_sends(original.nav_goal_id)
+        assert bridge.handle_recovery_report(d.inspection(lookup))
+        assert bridge.approve_retry(lookup) is None
+        revised = bridge.approve_retry(lookup, explicitly_approved=True)
+        assert revised.attempt_id != original.goal.attempt_id
+        replacement = bridge.prepare_dispatch(revised)
+        assert replacement.nav_goal_id != original.nav_goal_id
+        assert bridge.submit_once(replacement, d.send_active)
+        assert not bridge.report_dispatch_uncertain(original)
+        assert not bridge.observe(original, NavigationObservation.ARRIVED)
+        assert bridge.observe(replacement, NavigationObservation.ARRIVED)
+        assert not bridge.report_dispatch_uncertain(replacement)
+        assert not bridge.observe(replacement, NavigationObservation.ARRIVED)
+        if home:
+            assert node.mission_status == 'completed'
+        else:
+            assert web.send('done', revised.step_id) == 'accepted'
+            revision = state.revision
+            assert web.send('done', revised.step_id) == 'accepted'
+            assert state.revision == revision and state.completed == {revised.step_id}
+        assert state.active_version == 1
+    with manager(path) as node:
+        assert node.state.active_version == 1
+        assert node.current_goal() is None
+        if home:
+            assert node.mission_status == 'completed'
