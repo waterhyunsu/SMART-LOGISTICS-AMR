@@ -14,6 +14,8 @@ class MockMission:
             raise ValueError('missing mission ID')
         self.mission_id = mission_id
         self.steps = {}
+        self.pending_request_id = None
+        self.handoff_results = {}
         self.add_steps(steps)
         self.completed = set()
         self.current = None
@@ -54,6 +56,15 @@ class MockMission:
         except CycleError as error:
             raise ValueError('cyclic step prerequisites') from error
         self.steps.update(deepcopy(additions))
+        if additions:
+            self.pending_request_id = None
+
+    def update_cost_revision(self, cost_revision):
+        if not cost_revision.strip():
+            raise ValueError('missing cost revision')
+        if cost_revision != self.cost_revision:
+            self.cost_revision = cost_revision
+            self.pending_request_id = None
 
     def request(self, start_waypoint_id, cost_revision):
         if not start_waypoint_id.strip():
@@ -68,14 +79,15 @@ class MockMission:
             pending_steps=[deepcopy(s) for key, s in self.steps.items()
                            if key != self.current and key not in self.completed])
 
-        self.cost_revision = cost_revision
+        self.update_cost_revision(cost_revision)
+        self.pending_request_id = request.request_id
         self.latest_request_id = request.request_id
         return request
 
     def apply(self, result):
         """Validate against live state at the step boundary before replacing the suffix."""
         if (self.current or not result.success or result.mission_id != self.mission_id
-                or not self.latest_request_id or result.request_id != self.latest_request_id
+                or result.request_id != self.pending_request_id
                 or result.base_version != self.active_version
                 or result.cost_revision != self.cost_revision
                 or not isfinite(result.estimated_distance_m) or result.estimated_distance_m < 0):
@@ -90,6 +102,7 @@ class MockMission:
                 return False
             seen.add(key)
         self.order = order
+        self.pending_request_id = None
         self.active_version += 1
         return True
 
@@ -111,3 +124,14 @@ class MockMission:
         self.current = None
         self.waiting = False
         return True
+
+    def handoff(self, event_id, mission_id, step_id):
+        """Process one operator event; replay the recorded outcome in this MOCK instance."""
+        if not event_id.strip() or mission_id != self.mission_id:
+            return 'rejected'
+        if event_id in self.handoff_results:
+            original_step, outcome = self.handoff_results[event_id]
+            return outcome if original_step == step_id else 'conflict'
+        outcome = 'accepted' if self.confirm(mission_id, step_id) else 'rejected'
+        self.handoff_results[event_id] = (step_id, outcome)
+        return outcome

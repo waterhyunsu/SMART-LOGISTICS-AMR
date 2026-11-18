@@ -11,7 +11,7 @@ ROS2 Jazzy·Nav2 기반 TurtleBot3 Waffle Pi를 활용한 5인 졸업 프로젝�
 - **실차 환경:** TurtleBot3 Waffle Pi 1대, 기존 교육 강의실
 - **기획 기준:** 2026-11-17 최종 기획 제안서
 - **아키텍처:** v1.0 승인
-- **현재 단계:** P0 구현 준비 및 초기 실차 검증
+- **현재 단계:** Phase 1 — 팀원별 담당 기능 개발
 
 > 개발 PC의 ROS2 Jazzy 환경은 기본 동작을 확인했다. TurtleBot3 실차의 Jazzy 호환성 및 통합 주행은 별도 검증이 필요하다.
 
@@ -71,7 +71,9 @@ SMART-LOGISTICS-AMR/
 └── scripts/
 ```
 
-### 3.1 P0 공통 기반 빌드 및 MOCK 검증
+팀원별 개발 범위·착수 명령과 AI 프롬프트는 [병렬 개발 가이드](docs/TEAM_GUIDES/README.md)에 있다.
+
+### 3.1 Phase 0 공통 기반 빌드 및 MOCK 검증
 
 Ubuntu 24.04의 Bash에서 저장소 루트를 시작 위치로 사용한다.
 
@@ -99,11 +101,11 @@ MOCK은 생성된 요청과 응답을 메모리에서 직렬화해 전달한다.
 |---|---|---|
 | A | `mission_manager`, `logistics_msgs` | 계약 테스트의 후보 검증과 인계 확인 예제 |
 | B | 전역 플래너 비교 실험 | C·D와 플래너 설정 ID 및 실험 조건 공유 |
-| C | `route_optimizer`, `amr_bringup` | 최적화는 아래 서비스 후보로 입출력을 맞추고, Bringup은 별도로 센서·TF 점검 |
+| C | `route_optimizer`, `amr_bringup` | 최적화는 OptimizeRoute 서비스로 입출력을 맞추고, Bringup은 별도로 센서·TF 점검 |
 | D | `amr_navigation` | C의 Bringup을 바탕으로 Nav2 표준 목표 실행과 도착 결과 검증 |
 | E | `web_control/` | 작업 등록·인계 요청과 A가 제공할 상태를 기준으로 웹·DB 개발 |
 
-개별 패키지와 의존 패키지를 빌드할 때는 워크스페이스에서 `colcon build --symlink-install --packages-up-to mission_manager`의 마지막 인자를 해당 패키지명으로 바꾼다. 공통 타입 변경 후에는 전체 빌드와 테스트를 수행한다. 필드 의미와 승인 범위는 [인터페이스 문서](docs/INTERFACES.md#65-p0-mock-구현-후보)를 따른다.
+개별 패키지와 의존 패키지를 빌드할 때는 워크스페이스에서 `colcon build --symlink-install --packages-up-to mission_manager`의 마지막 인자를 해당 패키지명으로 바꾼다. 공통 타입 변경 후에는 전체 빌드와 테스트를 수행한다. 필드 의미와 승인 범위는 [인터페이스 문서](docs/INTERFACES.md)를 따른다.
 
 ## 4. 개발환경
 
@@ -233,7 +235,7 @@ LIBGL_ALWAYS_SOFTWARE=1 rviz2
 |---|---|
 | `AGENTS.md` | Codex 공통 규칙 및 개발 원칙 |
 | `docs/reference/ORIGINAL_PROPOSAL.md` | 최종 기획 제안서 — 최상위 요구사항 |
-| `docs/PRD.md` | 기능 요구사항 및 P0/P1/P2 우선순위 |
+| `docs/PRD.md` | 기능 요구사항 및 Priority P0/Priority P1/Priority P2 우선순위 |
 | `docs/ARCHITECTURE.md` | 승인된 시스템 아키텍처 v1.0 |
 | `docs/INTERFACES.md` | 공통 데이터·통신 계약 |
 | `docs/SIM_TO_REAL.md` | 실차 검증 및 Gate 0~5 |
@@ -263,15 +265,15 @@ ROS2 Humble 기준 예제나 기존 프로젝트 코드를 사용할 경우 Jazz
 
 ## 7. 개발 우선순위
 
-**P0 — 필수**
+**Priority P0 — 필수**
 
 실차 Bringup, Nav2 기본 주행, 작업 상태 머신, 방문 순서 최적화, 웹 인계 확인, 다중 지점 이동, HOME 복귀, 기본 동적 재계획 및 주요 알고리즘 비교.
 
-**P1 — 고도화**
+**Priority P1 — 고도화**
 
 DWB·RPP 비교, 고급 예외 처리, 실험 분석 고도화, 필요 시 ArUco 정밀 정렬.
 
-**P2 — 선택**
+**Priority P2 — 선택**
 
 자연어·음성 입력, 추가 최적화 및 실험 자동화.
 
