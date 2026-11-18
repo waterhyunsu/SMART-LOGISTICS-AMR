@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>mission_manager</name>
+  <version>0.0.0</version>
+  <description>Mission state and plan acceptance.</description>
+  <maintainer email="waterhyunsu@gmail.com">SMART-LOGISTICS AMR</maintainer>
+  <license>TODO</license>
+  <depend>python3-setuptools</depend>
+  <exec_depend>logistics_msgs</exec_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>rclpy</test_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

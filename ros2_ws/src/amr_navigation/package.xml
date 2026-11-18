@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>amr_navigation</name>
+  <version>0.0.0</version>
+  <description>Navigation and localization integration.</description>
+  <maintainer email="waterhyunsu@gmail.com">SMART-LOGISTICS AMR</maintainer>
+  <license>TODO</license>
+  <depend>python3-setuptools</depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>ament_index_python</test_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
