@@ -125,3 +125,25 @@ def test_deferred_candidate_rechecked_at_handoff(endpoints):
     assert m.handoff('done', m.state.mission_id, 'one-p') == 'accepted'
     assert m.plan_status == 'rejected' and m.state.active_version == 1
     assert m.state.order == ['one-d']
+
+
+def test_timeout_preserves_running_mission(endpoints):
+    m, server, client, remote = endpoints
+    m.register_jobs(job('one'), 'HOME', 'r1')
+    until(lambda: m.plan_status == 'applied', client, remote)
+    assert m.state.start_next() == 'one-p'
+    assert m.arrive('one-p')
+    m.timeout = 0.2
+    m.request_plan('A', 'r1')
+    until(lambda: m.future is not None, client)
+    until(lambda: m.plan_status == 'timeout', client)
+    until(lambda: len(server.requests) == 2, remote)
+    for _ in range(5):
+        client.spin_once(timeout_sec=0.02)
+    assert m.state.current == 'one-p'
+    assert m.state.waiting
+    assert m.state.active_version == 1
+    assert m.state.order == ['one-d']
+    assert not m.state.completed
+    assert m.handoff('done', m.state.mission_id, 'one-p') == 'accepted'
+    assert m.state.start_next() == 'one-d'
