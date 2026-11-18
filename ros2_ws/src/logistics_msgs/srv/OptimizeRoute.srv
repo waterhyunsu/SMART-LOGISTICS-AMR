@@ -1,0 +1,20 @@
+# Monotonic within this mission instance; echoed by the optimizer.
+uint64 request_id
+string mission_id
+uint64 base_version
+# Start of the replaceable suffix (current step's waypoint if busy).
+string start_waypoint_id
+string cost_revision
+string[] completed_step_ids
+string current_step_id
+TaskStep[] pending_steps
+---
+uint64 request_id
+bool success
+string failure_reason
+string mission_id
+uint64 base_version
+string cost_revision
+string method
+float64 estimated_distance_m
+string[] ordered_step_ids
