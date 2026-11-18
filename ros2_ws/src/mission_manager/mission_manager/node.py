@@ -194,8 +194,10 @@ class MissionManager(Node):
             self.state.start_home_return()
         return self.current_goal()
 
-    def handle_navigation_observation(self, goal, observation):
-        """Advance only on arrival for the current logical dispatch."""
+    def handle_navigation_observation(self, goal, observation, nav_goal_id=None):
+        """Advance only for the bound Nav2 Goal UUID when a mapping exists."""
+        if self.state.nav_goal_id is not None and nav_goal_id != self.state.nav_goal_id:
+            return False
         if (self.state.recovery_required or goal is None or goal != self.current_goal()
                 or observation is not NavigationObservation.ARRIVED):
             return False
