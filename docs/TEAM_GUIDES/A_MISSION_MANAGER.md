@@ -8,11 +8,11 @@
 | 2 | 신규 주문에 최신 기준으로 재요청하고 완료 경계에서 후보 적용 | 오랜 응답·비용표 또는 누락된 단계 거부, 현재 목표 보호 |
 | 3 | D의 주행 준비와 C의 Bringup 준비를 확인하고 HOME 하역까지 관리. E에 상태와 인계 결과 제공 | HOME 도착만으로 미션 종료되지 않음. 장애 후 이벤트 결과와 상태를 함께 복원 |
 
-**검증.** P0의 contract.py는 메모리 내 동작 예제다. 워크스페이스 overlay에서 `python3 -m pytest -q src/mission_manager/test`를 실행한다. P1에서는 C 서비스와 요청·응답 한 쌍을 DDS로 검증하고, 인계 ACK 직전 재시작을 주입해 전이 횟수와 복원 결과를 비교한다.
+**검증.** Phase 0의 contract.py는 메모리 내 동작 예제다. 워크스페이스 overlay에서 `python3 -m pytest -q src/mission_manager/test`를 실행한다. Phase 2에서는 C 서비스와 요청·응답 한 쌍을 DDS로 검증하고, 인계 ACK 직전 재시작을 주입해 전이 횟수와 복원 결과를 비교한다.
 
 **협업.** 최신 main에서 `feat/a-mission-manager`로 분기해 PR을 제출한다. 인터페이스 영향·테스트 결과를 기록한다. 공통 변경은 A 승인, 타 패키지 수정은 담당자 협의와 PR 사유 설명이 필요하다.
 
-**TCREI 프롬프트**
+**TCREI 프롬프트** · [공통 AI 지침](COMMON_AI_PROMPT.md)과 함께 사용한다.
 
 - Task — 현재 단계 인계 후에만 신규 주문 계획을 적용하는 A측 흐름부터 구현하라.
 - Context — C는 후보 계산, D는 목표 도착, E는 사용자 확인을 제공한다. 상태 변경 권한은 A에 있다.

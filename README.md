@@ -11,7 +11,7 @@ ROS2 Jazzy·Nav2 기반 TurtleBot3 Waffle Pi를 활용한 5인 졸업 프로젝�
 - **실차 환경:** TurtleBot3 Waffle Pi 1대, 기존 교육 강의실
 - **기획 기준:** 2026-11-17 최종 기획 제안서
 - **아키텍처:** v1.0 승인
-- **현재 단계:** P0 구현 준비 및 초기 실차 검증
+- **현재 단계:** Phase 1 — 팀원별 담당 기능 개발
 
 > 개발 PC의 ROS2 Jazzy 환경은 기본 동작을 확인했다. TurtleBot3 실차의 Jazzy 호환성 및 통합 주행은 별도 검증이 필요하다.
 
@@ -73,7 +73,7 @@ SMART-LOGISTICS-AMR/
 
 팀원별 개발 범위·착수 명령과 AI 프롬프트는 [병렬 개발 가이드](docs/TEAM_GUIDES/README.md)에 있다.
 
-### 3.1 P0 공통 기반 빌드 및 MOCK 검증
+### 3.1 Phase 0 공통 기반 빌드 및 MOCK 검증
 
 Ubuntu 24.04의 Bash에서 저장소 루트를 시작 위치로 사용한다.
 
@@ -235,7 +235,7 @@ LIBGL_ALWAYS_SOFTWARE=1 rviz2
 |---|---|
 | `AGENTS.md` | Codex 공통 규칙 및 개발 원칙 |
 | `docs/reference/ORIGINAL_PROPOSAL.md` | 최종 기획 제안서 — 최상위 요구사항 |
-| `docs/PRD.md` | 기능 요구사항 및 P0/P1/P2 우선순위 |
+| `docs/PRD.md` | 기능 요구사항 및 Priority P0/Priority P1/Priority P2 우선순위 |
 | `docs/ARCHITECTURE.md` | 승인된 시스템 아키텍처 v1.0 |
 | `docs/INTERFACES.md` | 공통 데이터·통신 계약 |
 | `docs/SIM_TO_REAL.md` | 실차 검증 및 Gate 0~5 |
@@ -265,15 +265,15 @@ ROS2 Humble 기준 예제나 기존 프로젝트 코드를 사용할 경우 Jazz
 
 ## 7. 개발 우선순위
 
-**P0 — 필수**
+**Priority P0 — 필수**
 
 실차 Bringup, Nav2 기본 주행, 작업 상태 머신, 방문 순서 최적화, 웹 인계 확인, 다중 지점 이동, HOME 복귀, 기본 동적 재계획 및 주요 알고리즘 비교.
 
-**P1 — 고도화**
+**Priority P1 — 고도화**
 
 DWB·RPP 비교, 고급 예외 처리, 실험 분석 고도화, 필요 시 ArUco 정밀 정렬.
 
-**P2 — 선택**
+**Priority P2 — 선택**
 
 자연어·음성 입력, 추가 최적화 및 실험 자동화.
 

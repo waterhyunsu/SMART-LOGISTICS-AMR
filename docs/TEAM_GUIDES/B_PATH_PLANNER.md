@@ -1,6 +1,6 @@
 # B · 정지호 — A*와 Dijkstra 비교
 
-**목표와 범위.** 동일한 지도·Costmap·출발/목표에서 전역 플래너를 비교해 선택 근거를 제공한다. P0에 B 전용 패키지는 없다. 첫 PR에서 저장소 루트의 `experiments/path_planner/`를 만들고 비교 설정, 실행 스크립트, 조건과 측정 결과를 함께 둔다.
+**목표와 범위.** 동일한 지도·Costmap·출발/목표에서 전역 플래너를 비교해 선택 근거를 제공한다. Phase 0에 B 전용 패키지는 없다. 첫 PR에서 저장소 루트의 `experiments/path_planner/`를 만들고 비교 설정, 실행 스크립트, 조건과 측정 결과를 함께 둔다.
 
 1. D와 지도·프레임·플래너 환경을 맞추고 고정된 출발/목표 쌍 및 실패 사례를 정의한다.
 2. NavFn의 A*·Dijkstra 설정을 분리하고 같은 조건으로 ComputePathToPose 결과를 수집한다. 경로 길이(m), 계획 시간, 성공 여부와 설정 ID를 기록한다.
@@ -10,7 +10,7 @@
 
 **협업.** 최신 main에서 `feat/b-path-planner`로 분기한다. PR에 비교 명령, 설정 차이와 실측 표를 첨부한다. D의 배포 설정 수정은 D와 협의하고 이유를 적는다. 공통 ROS 타입은 A의 변경 승인이 필요하다.
 
-**TCREI 프롬프트**
+**TCREI 프롬프트** · [공통 AI 지침](COMMON_AI_PROMPT.md)과 함께 사용한다.
 
 - Task — experiments/path_planner/에서 재현 가능한 A*·Dijkstra 비교 한 쌍을 만들어라.
 - Context — D가 Nav2 환경을, B가 비교 조건과 플래너 설정을 소유한다.
