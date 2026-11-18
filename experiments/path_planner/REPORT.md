@@ -32,6 +32,8 @@
 
 ## 4. 측정 결과 및 그래프
 
+실험마다의 목적·조건·관찰은 [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md)에 있다. 이 절에는 보고에 쓰는 측정만 모은다.
+
 | 실험 ID | 날짜 | 모드 | 반복 | 결과 |
 | --- | --- | --- | --- | --- |
 | `20261118T061956Z_SIM_lecture_hall_v1` | 2026-11-18 | SIM (planner-only) | 예열 1 + 30 | [summary.md](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md), 요약표는 [README "측정 결과"](README.md#측정-결과--sim-planner-only) |

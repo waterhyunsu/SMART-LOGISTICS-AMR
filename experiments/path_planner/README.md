@@ -20,6 +20,7 @@
 | 경로 | 내용 |
 | --- | --- |
 | [`REPORT.md`](REPORT.md) | 기술 선정 보고서 (기획서 §12.4 양식, 작성 중) |
+| [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md) | 날짜순 실험 기록: 실험마다 목적, 바꾼 조건, 관찰, 문제와 원인 |
 | [`config/navfn_compare.yaml`](config/navfn_compare.yaml) | planner_server 하나에 NavFn 두 개(`NavFnAStar`, `NavFnDijkstra`). `use_astar`만 다르고 같은 global costmap을 쓴다 |
 | [`scenarios/lecture_hall_v1.yaml`](scenarios/lecture_hall_v1.yaml) | 고정 지점과 쌍: R1-A 개방, R1-B 장애물 우회, R1-C 좁은 통로(각각 정·역방향), FAIL-WALLED(벽으로 막힌 영역), FAIL-OFFMAP(지도 밖 목표) |
 | [`launch/planner_bench.launch.py`](launch/planner_bench.launch.py) | planner-only 스택: map_server + planner_server + lifecycle_manager + 정적 TF `map → base_footprint` |
@@ -84,7 +85,7 @@ python3 -m pytest experiments/path_planner/tests -q      # PyYAML, pytest 필요
 
 | 값 | 환경 영향 | 다룰 방법 |
 | --- | --- | --- |
-| 경로 길이·성공 여부·오류 코드 | Nav2 버전·설정·지도가 같으면 플랫폼과 무관해야 한다. **[미확인]** 다른 환경에서는 아직 교차 실행하지 않았다 | 네이티브 Ubuntu나 Mac VM에서 같은 명령을 실행하고 `summary.csv`의 `planned_distance`를 비교한다 |
+| 경로 길이·성공 여부·오류 코드 | Nav2 버전·설정·지도가 같으면 플랫폼과 무관해야 한다. **[미확인]** 다른 환경에서는 아직 교차 실행하지 않았다. 같은 PC에서도 Nav2를 새로 띄운 실행끼리 R1-C가 최대 0.0026 m 달랐다 ([실험 기록](EXPERIMENT_LOG.md)) | 네이티브 Ubuntu나 Mac VM에서 같은 명령을 실행하고 `summary.csv`의 `planned_distance`를 비교한다. 수 mm는 허용 오차로 본다 |
 | `planning_time`, `roundtrip_time` | CPU와 가상화 방식(WSL2·Docker, UTM VM, 로봇 PC)에 따라 달라진다 | 같은 실험(같은 세션) 안에서 A*와 Dijkstra만 비교한다. 다른 PC 결과와 절대값을 비교하지 않는다 |
 | Nav2 버전 | Docker 이미지는 빌드 시점의 최신 apt 패키지를 받는다 (현재 1.3.14) | `meta.json`의 `env.nav2_planner`를 확인한다. 버전이 다르면 결과를 따로 본다 |
 | Mac (ARM64) | macOS에서는 Jazzy를 직접 실행하지 않고 Ubuntu VM이나 Docker를 쓴다. `ros:jazzy-ros-base`에는 arm64 이미지가 있다. **[미확인]** 이 Dockerfile로 arm64 빌드는 해 보지 않았다 | VM 결과는 VM 환경 결과로 표시한다 (AGENTS.md §7) |
