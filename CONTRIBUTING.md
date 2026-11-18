@@ -11,7 +11,7 @@
 - 단일 GitHub Monorepo를 사용한다.
 - `main`은 통합 검증된 기준 브랜치로 관리한다.
 - 기능 개발은 별도 브랜치에서 진행한다.
-- `main` 직접 Push보다 Pull Request를 통한 병합을 우선한다.
+- `main` 직접 Push를 금지하며 기능 브랜치의 Pull Request로 통합한다.
 - 공통 인터페이스와 아키텍처 변경은 A의 승인을 받는다.
 - 다른 담당자 영역의 코드를 협의 없이 변경하지 않는다.
 - AI 생성 코드도 해당 담당자가 검토·테스트한다.
@@ -21,11 +21,11 @@
 **기능 개발**
 
 - `feat/a-mission-manager`
-- `feat/b-global-planner`
+- `feat/b-path-planner`
 - `feat/c-route-optimizer`
 - `feat/c-bringup`
 - `feat/d-navigation`
-- `feat/e-dashboard`
+- `feat/e-web-dashboard`
 
 **버그 수정**
 

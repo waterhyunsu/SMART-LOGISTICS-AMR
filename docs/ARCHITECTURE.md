@@ -84,13 +84,13 @@ SMART-LOGISTICS-AMR/
 
 위 ROS2 패키지 디렉터리는 향후 생성할 **권장 구조**이며, 현재 실제 파일이 생성되었다는 의미가 아니다.
 
-B의 전역 경로 탐색 비교 코드는 우선 Nav2 플래너 설정과 별도 실험 스크립트로 구성 가능한지 검토한다. 독립 ROS2 패키지가 반드시 필요한지는 초기 설계에서 결정한다.
+B는 첫 실험 PR에서 저장소 루트의 `experiments/path_planner/`를 생성해 플래너 설정·재현 스크립트·측정 결과를 관리한다. P0 기본 ROS2 패키지는 5개다.
 
 ---
 
 ## 4. ROS2 패키지별 책임
 
-| 패키지 | 빌드 방식 후보 | 담당 | 주요 책임 |
+| 패키지 | 빌드 방식 | 담당 | 주요 책임 |
 |---|---|---|---|
 | `logistics_msgs` | `ament_cmake` | A 관리 | 필요한 공통 ROS2 인터페이스 |
 | `mission_manager` | `ament_python` | A | 미션 상태·실행·재계획 적용 |
@@ -99,7 +99,7 @@ B의 전역 경로 탐색 비교 코드는 우선 Nav2 플래너 설정과 별�
 | `amr_bringup` | `ament_cmake` | C | 하드웨어·센서·TF·통신·기본 실행 |
 | `web_control` | ROS2 패키지 여부 미정 | E | FastAPI·SQLite·웹 UI |
 
-빌드 방식은 초기 후보이며, 실제 패키지 구현 방식에 따라 검토한다.
+위 5개 ROS2 패키지는 Jazzy에서 빌드했다. web_control은 저장소 루트의 별도 개발 영역이다.
 
 ### 4.1. `logistics_msgs` — A 관리
 
@@ -365,13 +365,13 @@ C의 Bringup은 실제 로봇 구동을 위한 기반 환경이다. 최적화 �
 
 ---
 
-## 8. 모듈 인터페이스 후보
+## 8. 모듈 인터페이스
 
 | 연결 | 목적 | 우선 검토 방식 |
 |---|---|---|
 | E → A | 작업 등록·인계 완료 요청 | REST 또는 ROS2 Gateway |
-| A → C | 방문 순서·재계획 요청 | ROS2 Service 또는 Action |
-| C → A | 계획 결과 반환 | 요청 응답 방식에 따라 결정 |
+| A → C | 방문 순서·재계획 요청 | `OptimizeRoute` Service |
+| C → A | 계획 결과 반환 | OptimizeRoute 응답 |
 | A → D | 목표 이동 요청 | 표준 Nav2 Action 활용 여부 검토 |
 | D → A | 주행 준비 상태·실행 결과 | Action 결과 및 상태 전달 |
 | B ↔ D | 플래너 설정·검증 | 설정 파일·실험 및 Nav2 인터페이스 |
@@ -380,9 +380,7 @@ C의 Bringup은 실제 로봇 구동을 위한 기반 환경이다. 최적화 �
 | A → E | 현재 미션 상태 제공 | Topic 또는 웹 Gateway |
 | B·C·D → E | 실험 결과 기록 | JSON·CSV·SQLite 등 |
 
-위 표는 인터페이스 방향과 후보 기술만 정의한다.
-
-실제 Topic·Service·Action의 이름, 메시지 구조, QoS, Timeout, 중복 요청 처리, 오류 코드는 `docs/INTERFACES.md`에서 검토하고 팀 합의 후 확정한다.
+A↔C 타입·버전과 E→A 인계 이벤트 규칙은 [인터페이스 계약](INTERFACES.md)에 따른다. C가 비용표를 발급하고 A만 후보 적용과 상태 전이를 승인한다. QoS·타임아웃과 E의 전송 방식은 후속 결정 대상이다.
 
 사용자 정의 ROS2 메시지는 꼭 필요한 부분만 `logistics_msgs`에 포함한다.
 
@@ -454,14 +452,14 @@ C의 Bringup은 실제 로봇 구동을 위한 기반 환경이다. 최적화 �
 
 ### 11.2. 세부 구현 결정 필요
 
-- [ ] ROS2 패키지별 실제 빌드 방식과 노드 구성
-- [ ] B의 전역 플래너 연구 코드 배치
-- [ ] `logistics_msgs`의 메시지·서비스 정의
-- [ ] A↔C 최적화 요청·응답 구현 방식
+- [ ] ROS2 패키지별 실행 노드 구성
+- [x] B의 실험 경로 experiments/path_planner/
+- [x] P0 TaskStep 및 OptimizeRoute
+- [x] A↔C OptimizeRoute Service
 - [ ] A↔D 주행 실행 인터페이스
 - [ ] E↔ROS2 연동 방식
 - [ ] 실제 Topic·Service·Action 이름과 QoS
-- [ ] Plan Version·중복 요청·Timeout 처리 방식
+- [ ] 재시작 복구 및 Timeout 처리 방식
 - [ ] TurtleBot3 컴퓨팅 보드 OS·아키텍처·센서 드라이버·OpenCR 펌웨어의 Jazzy 호환성
 - [ ] 실제 장비 설정 및 실차 검증 결과
 

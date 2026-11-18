@@ -71,6 +71,8 @@ SMART-LOGISTICS-AMR/
 └── scripts/
 ```
 
+팀원별 개발 범위·착수 명령과 AI 프롬프트는 [병렬 개발 가이드](docs/TEAM_GUIDES/README.md)에 있다.
+
 ### 3.1 P0 공통 기반 빌드 및 MOCK 검증
 
 Ubuntu 24.04의 Bash에서 저장소 루트를 시작 위치로 사용한다.
@@ -99,11 +101,11 @@ MOCK은 생성된 요청과 응답을 메모리에서 직렬화해 전달한다.
 |---|---|---|
 | A | `mission_manager`, `logistics_msgs` | 계약 테스트의 후보 검증과 인계 확인 예제 |
 | B | 전역 플래너 비교 실험 | C·D와 플래너 설정 ID 및 실험 조건 공유 |
-| C | `route_optimizer`, `amr_bringup` | 최적화는 아래 서비스 후보로 입출력을 맞추고, Bringup은 별도로 센서·TF 점검 |
+| C | `route_optimizer`, `amr_bringup` | 최적화는 OptimizeRoute 서비스로 입출력을 맞추고, Bringup은 별도로 센서·TF 점검 |
 | D | `amr_navigation` | C의 Bringup을 바탕으로 Nav2 표준 목표 실행과 도착 결과 검증 |
 | E | `web_control/` | 작업 등록·인계 요청과 A가 제공할 상태를 기준으로 웹·DB 개발 |
 
-개별 패키지와 의존 패키지를 빌드할 때는 워크스페이스에서 `colcon build --symlink-install --packages-up-to mission_manager`의 마지막 인자를 해당 패키지명으로 바꾼다. 공통 타입 변경 후에는 전체 빌드와 테스트를 수행한다. 필드 의미와 승인 범위는 [인터페이스 문서](docs/INTERFACES.md#65-p0-mock-구현-후보)를 따른다.
+개별 패키지와 의존 패키지를 빌드할 때는 워크스페이스에서 `colcon build --symlink-install --packages-up-to mission_manager`의 마지막 인자를 해당 패키지명으로 바꾼다. 공통 타입 변경 후에는 전체 빌드와 테스트를 수행한다. 필드 의미와 승인 범위는 [인터페이스 문서](docs/INTERFACES.md)를 따른다.
 
 ## 4. 개발환경
 

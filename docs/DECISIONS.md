@@ -423,20 +423,32 @@ P1·P2 기능 때문에 P0 전체 미션 개발을 지연시키지 않는다.
 
 ---
 
-## 3. 미확정 기술 결정
+### ADR-015 — 병렬 개발 공통 계약 (2026-11-18, A 승인)
+
+| 결정 | 근거 | 영향 모듈 |
+|---|---|---|
+| P0 TaskStep 및 OptimizeRoute 필드 유지, 서비스 상대 이름 `optimize_route` | 생성 타입 직렬화 호환, 계산과 적용 권한 분리 | logistics_msgs, mission_manager, route_optimizer |
+| A가 요청 ID를 발급하고 후보 승인 시에만 활성 버전을 증가 | 늦은 계산 결과와 현재 단계 인계 중의 계획 교체 방지 | A·C |
+| C가 불변 비용표 스냅샷 버전 운영, B가 플래너 선정 근거 제공 | 설정이나 비용이 바뀐 경로의 재사용 방지 | B 실험, route_optimizer, amr_navigation, mission_manager |
+| E는 이벤트 ID를 유지해 재전송하고 A는 미션별 최초 결과를 재사용 | 응답 유실·중복 전달 시 추가 상태 전이 방지 | web_control, mission_manager |
+| B 실험은 experiments/path_planner/, E는 기존 web_control/ 사용 | 패키지 수 유지 및 소유권 분리 | B·E |
+
+상세 규칙·미구현 경계는 [인터페이스 계약](INTERFACES.md) §5.3·§6.4에 기록한다. P1에서는 DDS 왕복과 프로세스 재시작 후 일관성을 검증한다.
+
+## 3. 세부 기술 결정 상태
 
 다음 항목은 승인된 아키텍처 범위 안에서 구현 전에 최종 결정해야 한다.
 
 | ID | 결정 대상 | 현재 상태 | 주관 담당 | 승인권자 |
 |---|---|---|---|---|
-| P-001 | A↔C 최적화 요청의 Service/Action 선택 | PENDING | A·C | A |
+| P-001 | A↔C 최적화 요청의 Service/Action 선택 | 승인 (ADR-015) | A·C | A |
 | P-002 | A↔D 직접 Nav2 Action 사용 또는 Adapter 구성 | PENDING | A·D | A |
 | P-003 | E↔ROS2 연결 방식 | PENDING | A·E | A |
-| P-004 | 공통 `.msg`·`.srv` 정의 및 필드 | PENDING | A, 관련 담당 | A |
-| P-005 | Topic·Service·Action 이름과 QoS | PENDING | 관련 담당 | A |
-| P-006 | Plan ID·Plan Version 부여 및 저장 규칙 | PENDING | A·C | A |
-| P-007 | 물품 인계 완료 요청의 중복 방지 방식 | PENDING | A·E | A |
-| P-008 | 비용표 저장·재계산·무효화 정책 | PENDING | B·C·D | A |
+| P-004 | 공통 `.msg`·`.srv` 정의 및 필드 | 승인 (ADR-015) | A, 관련 담당 | A |
+| P-005 | OptimizeRoute 외 런타임 이름 및 QoS | PENDING | 관련 담당 | A |
+| P-006 | 계획 식별·활성 버전의 영속 저장 구현 | PENDING | A·C | A |
+| P-007 | 물품 인계 완료 요청의 중복 방지 방식 | 승인 (ADR-015) | A·E | A |
+| P-008 | 비용표 저장 형식 및 갱신 통지 구현 | PENDING | B·C·D | A |
 | P-009 | 전역 플래너 최종 선정 | VERIFY | B·D | A |
 | P-010 | 방문 순서 알고리즘 최종 선정 | VERIFY | C | A |
 | P-011 | 로컬 Controller 최종 선정 | VERIFY | D | A |

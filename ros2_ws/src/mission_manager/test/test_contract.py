@@ -130,3 +130,33 @@ def test_cyclic_registration_is_atomic(steps, prerequisite):
         mission.add_steps([pickup, delivery])
     assert mission.apply(before)
     assert mission.order == ['load', 'unload']
+
+
+def test_cost_snapshot_change_expires_candidate_without_replacing_plan(steps):
+    mission = MockMission('mission', steps)
+    old = mock_optimizer(mission.request('HOME', 'r1'))
+    mission.update_cost_revision('r2')
+    mission.update_cost_revision('r1')
+    assert not mission.apply(old)
+    assert mission.active_version == 0
+    fresh = mock_optimizer(mission.request('HOME', 'r1'))
+    mission.update_cost_revision('r1')
+    assert mission.apply(fresh)
+    assert mission.active_version == 1
+
+
+def test_handoff_replay_and_conflict_after_step_change(steps):
+    m = MockMission('mission', steps)
+    assert m.apply(mock_optimizer(m.request('HOME', 'r1')))
+    assert m.start_next() == 'load'
+    assert m.handoff('before', 'mission', 'load') == 'rejected'
+    assert m.arrive('load')
+    assert m.handoff('before', 'mission', 'load') == 'rejected'
+    assert m.handoff('event1', 'mission', 'load') == 'accepted'
+    assert m.start_next() == 'unload'
+    assert m.arrive('unload')
+    assert m.handoff('event1', 'mission', 'load') == 'accepted'
+    assert m.handoff('event1', 'mission', 'unload') == 'conflict'
+    assert m.handoff('event2', 'mission', 'load') == 'rejected'
+    assert m.completed == {'load'}
+    assert m.handoff('event3', 'mission', 'unload') == 'accepted'
