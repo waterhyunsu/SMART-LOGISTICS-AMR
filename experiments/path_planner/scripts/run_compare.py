@@ -155,17 +155,14 @@ class MapSwitcher:
     A switch counts only when (1) load_map succeeds and returns a map with the scenario map's geometry, and (2) a
     global costmap message shows every cell of the variant's boxes as lethal while each box that belongs only to
     other variants still has a non-lethal cell. Otherwise it raises and nothing is measured on that map.
+    The costmap is subscribed only during a switch, so no costmap callback runs while trials are measured.
     """
 
     def __init__(self, node, scenarios, work_dir, service, costmap_topic, timeout):
         from nav2_msgs.srv import LoadMap
-        from nav_msgs.msg import OccupancyGrid
-        from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
         self.node, self.timeout, self.LoadMap, self.service = node, timeout, LoadMap, service
+        self.costmap_topic = costmap_topic
         self.client = node.create_client(LoadMap, service)
-        self.costmaps = []
-        qos = QoSProfile(depth=1, durability=DurabilityPolicy.VOLATILE, reliability=ReliabilityPolicy.RELIABLE)
-        self.sub = node.create_subscription(OccupancyGrid, costmap_topic, self.costmaps.append, qos)
         self.geometry = core.map_info(scenarios.map_yaml)
         self.boxes = {'': ()} | scenarios.map_variants()
         self.paths, self.versions, self.records = {'': scenarios.map_yaml}, {}, {}
@@ -189,10 +186,30 @@ class MapSwitcher:
             return [msg.data[j * g['width'] + i] == LETHAL for i, j in cells]
         return all(all(lethal(b)) for b in own) and not any(all(lethal(b)) for b in others)
 
+    def wait_for_costmap(self, variant):
+        """Subscribe to the costmap (latest message only) until it shows the variant or the timeout ends."""
+        import rclpy
+        from nav_msgs.msg import OccupancyGrid
+        from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+        latest = []
+
+        def keep(msg):
+            latest[:] = [msg]
+        qos = QoSProfile(depth=1, durability=DurabilityPolicy.VOLATILE, reliability=ReliabilityPolicy.RELIABLE)
+        sub = self.node.create_subscription(OccupancyGrid, self.costmap_topic, keep, qos)
+        try:
+            end = time.monotonic() + self.timeout
+            while time.monotonic() < end:
+                rclpy.spin_once(self.node, timeout_sec=0.2)
+                if latest and self.shows(latest[0], variant):
+                    return True
+            return False
+        finally:
+            self.node.destroy_subscription(sub)
+
     def __call__(self, variant):
         if variant == self.current:
             return
-        import rclpy
         t0 = time.monotonic()
         if not self.client.wait_for_service(timeout_sec=self.timeout):
             raise RuntimeError(f'/{self.service} not available')
@@ -206,14 +223,7 @@ class MapSwitcher:
             raise RuntimeError(f'load_map {req.map_url} failed with result {res.result}')
         if not self.shows(res.map, variant):
             raise RuntimeError(f'map_server loaded {grid_info(res.map)} without the expected obstacles of {variant!r}')
-        self.costmaps.clear()
-        end = time.monotonic() + self.timeout
-        while time.monotonic() < end:
-            rclpy.spin_once(self.node, timeout_sec=0.2)
-            if self.costmaps and self.shows(self.costmaps[-1], variant):
-                break
-            del self.costmaps[:-1]
-        else:
+        if not self.wait_for_costmap(variant):
             raise RuntimeError(f'global costmap did not show map variant {variant!r} within {self.timeout} s')
         self.current = variant
         if variant:
