@@ -1,0 +1,28 @@
+# A -> D: recovery lookup for a previously dispatched goal.
+string mission_id
+string step_id            # empty string = standalone HOME return
+uint64 plan_version
+string waypoint_id
+string attempt_id
+string nav_goal_id
+string check_id           # Recovery Check ID, new for every lookup
+---
+# Echo of the request context and check_id.
+string mission_id
+string step_id
+uint64 plan_version
+string waypoint_id
+string attempt_id
+string nav_goal_id
+string check_id
+
+uint8 OBS_ARRIVED=1
+uint8 OBS_NOT_ARRIVED=2       # goal still executing
+uint8 OBS_NO_ACTIVE_GOAL=3    # only when terminal state confirmed AND no other active/pending send
+uint8 OBS_UNKNOWN=4           # cannot confirm (no record, accept timeout, result lookup failure, ...)
+uint8 OBS_DISCONNECTED=5
+uint8 OBS_TIMEOUT=6
+
+uint8 observation
+bool no_pending_dispatch      # true is required together with OBS_NO_ACTIVE_GOAL
+string detail
