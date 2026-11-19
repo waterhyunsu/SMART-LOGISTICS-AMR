@@ -67,6 +67,25 @@ def test_path_clearance_and_turning(tmp_path):
     assert core.turn_total(jitter) < 20.0 < 1000.0 < core.turn_total(jitter, step=0.001)
 
 
+def test_resampled_length_drops_fine_zigzag_but_keeps_the_route():
+    zigzag = [(x / 100, 0.02 * (x % 2)) for x in range(301)]         # 3 m long route with a 2 cm zig-zag
+    assert core.path_length(zigzag) > 6.0
+    assert core.resampled_length(zigzag) == pytest.approx(3.0, abs=0.05)
+    corner = [(x / 20, 0.0) for x in range(41)] + [(2.0, y / 20) for y in range(1, 41)]
+    assert core.resampled_length(corner) == pytest.approx(core.path_length(corner), abs=0.05)  # corner cut a little
+    assert core.resampled_length([(0.0, 0.0), (0.03, 0.0)]) == pytest.approx(0.03)   # the last point always counts
+    assert core.resampled_length([]) == 0 and core.resampled_length([(1.0, 1.0)]) == 0
+
+
+def test_max_separation_is_symmetric_and_zero_for_the_same_path():
+    a = [(x / 10, 0.0) for x in range(31)]
+    b = [(x / 10, 0.0) for x in range(16)] + [(1.5, y / 10) for y in range(1, 21)]
+    assert core.max_separation(a, a) == 0.0
+    # the end of b, (1.5, 2.0), is 2.0 m from a; the end of a, (3.0, 0.0), is 1.5 m from b
+    assert core.max_separation(a, b) == core.max_separation(b, a) == pytest.approx(2.0)
+    assert core.max_separation(a, []) is None
+
+
 class Fake:
     """Straight line on the plain map, an L-shaped detour on R1-D1, NO_VALID_PATH on R1-D2."""
 
@@ -152,13 +171,14 @@ def test_figures_are_written_for_every_run(tmp_path):
     with open(os.path.join(out, 'paths.json'), encoding='utf-8') as f:
         assert len(json.load(f)['paths']) == 12
     with open(os.path.join(out, 'trials.csv'), encoding='utf-8') as f:
-        assert next(csv.reader(f))[-3:] == ['min_clearance', 'mean_clearance', 'turn_sum_deg']
+        assert next(csv.reader(f))[-4:] == ['min_clearance', 'mean_clearance', 'turn_sum_deg', 'resampled_distance']
     names = plot_paths.plot_results(out)
     assert len(names) == 8 and 'paths_R1-D1_fwd_blocked.svg' in names
     assert not os.path.exists(os.path.join(out, '.plot_maps'))
     with open(os.path.join(out, 'paths_R1-D1_fwd_blocked.svg'), encoding='utf-8') as f:
         detour = f.read()
     assert detour.count('<polyline') == 2 and 'NavFn Dijkstra: ' in detour and '꺾인 각도 합 180°' in detour
+    assert '두 경로 사이 최대 간격 0.00 m' in detour and '(0.10 m 간격 ' in detour
     with open(os.path.join(out, 'paths_R1-D2_rev_blocked.svg'), encoding='utf-8') as f:
         failed = f.read()
     assert '<polyline' not in failed and failed.count('경로 없음 (NO_VALID_PATH)') == 2

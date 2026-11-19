@@ -34,18 +34,20 @@ EXPERIMENT_RESULT_FIELDS = [
 # obstacle_hits: path poses inside one of the pair's obstacles (only for pairs with obstacles and a returned path).
 # min_clearance / mean_clearance: m from the path poses (robot centre) to the nearest occupied map cell.
 # turn_sum_deg: sum of |heading change| along the path resampled every 0.10 m (0 = straight, ~90 per corner).
+# resampled_distance: m, length of the path resampled every 0.10 m. planned_distance minus this is the length
+#   that comes from zig-zag finer than 0.10 m. planned_distance (sum over all poses) stays the contract value.
 EXTRA_FIELDS = [
     'scenario_set', 'scenario_version', 'pair_id', 'direction', 'repetition', 'order', 'warmup', 'plan_success',
     'expected', 'expectation_met', 'error_code', 'error_name', 'error_msg', 'roundtrip_time', 'num_poses',
     'path_end_error', 'start_x', 'start_y', 'start_yaw_deg', 'goal_x', 'goal_y', 'goal_yaw_deg', 'stamp',
-    'map_variant', 'obstacle_hits', 'min_clearance', 'mean_clearance', 'turn_sum_deg']
+    'map_variant', 'obstacle_hits', 'min_clearance', 'mean_clearance', 'turn_sum_deg', 'resampled_distance']
 TRIAL_FIELDS = EXPERIMENT_RESULT_FIELDS + EXTRA_FIELDS
 SUMMARY_FIELDS = [
     'scenario_id', 'pair_id', 'direction', 'expected', 'planner_id', 'algorithm', 'trials', 'plan_successes',
     'success_rate', 'expectation_met', 'planned_distance_mean', 'planned_distance_std', 'planned_distance_min',
     'planned_distance_max', 'planning_time_median', 'planning_time_max', 'roundtrip_time_median',
     'failure_reasons', 'map_variant', 'obstacle_crossings', 'min_clearance_min', 'mean_clearance_mean',
-    'turn_sum_deg_mean']
+    'turn_sum_deg_mean', 'resampled_distance_mean']
 
 
 @dataclass(frozen=True)
@@ -424,14 +426,35 @@ def path_clearance(field, points):
     return (min(values), sum(values) / len(values)) if values else (None, None)
 
 
+def resample(points, step=0.10):
+    """The path thinned to points at least ``step`` m apart, starting from the first point."""
+    keep = list(points[:1])
+    for p in points[1:]:
+        if math.dist(p, keep[-1]) >= step:
+            keep.append(p)
+    return keep
+
+
+def resampled_length(points, step=0.10):
+    """Length (m) of the path through its resampled points and its last point."""
+    keep = resample(points, step)
+    if points and tuple(keep[-1]) != tuple(points[-1]):
+        keep.append(points[-1])
+    return path_length(keep)
+
+
+def max_separation(points, other):
+    """Largest distance (m) from a point of one path to the nearest point of the other, both ways."""
+    if not points or not other:
+        return None
+    return max(max(min(math.dist(p, q) for q in b) for p in a) for a, b in ((points, other), (other, points)))
+
+
 def turn_total(points, step=0.10):
     """Sum of |heading change| in degrees along the path resampled every ``step`` m (same rule as legacy_r1)."""
     if len(points) < 3:
         return 0.0
-    keep = [points[0]]
-    for p in points[1:]:
-        if math.dist(p, keep[-1]) >= step:
-            keep.append(p)
+    keep = resample(points, step)
     headings = [math.atan2(b[1] - a[1], b[0] - a[0]) for a, b in zip(keep, keep[1:])]
     total = sum(abs((b - a + math.pi) % (2 * math.pi) - math.pi) for a, b in zip(headings, headings[1:]))
     return math.degrees(total)
@@ -587,6 +610,7 @@ def _trial_row(run, cfg, order, k, warmup, out, *, experiment_id, run_mode, conf
         'obstacle_hits': obstacle_hits(out.poses, run.obstacles) if ok and run.obstacles else '',
         'min_clearance': _round(min_clear, 4), 'mean_clearance': _round(mean_clear, 4),
         'turn_sum_deg': round(turn_total(out.poses), 1) if ok else '',
+        'resampled_distance': round(resampled_length(out.poses), 4) if ok else '',
         'start_x': run.start.x, 'start_y': run.start.y, 'start_yaw_deg': run.start.yaw_deg,
         'goal_x': run.goal.x, 'goal_y': run.goal.y, 'goal_yaw_deg': run.goal.yaw_deg, 'stamp': stamp}
 
@@ -620,6 +644,8 @@ def summarize(rows):
                                           statistics.fmean),
             'turn_sum_deg_mean': _stats([r['turn_sum_deg'] for r in rs if r['turn_sum_deg'] != ''],
                                         statistics.fmean),
+            'resampled_distance_mean': _stats([r['resampled_distance'] for r in rs if r['resampled_distance'] != ''],
+                                              statistics.fmean),
             'planned_distance_mean': _stats(dist, statistics.fmean),
             'planned_distance_std': _stats(dist, statistics.pstdev),
             'planned_distance_min': _stats(dist, min), 'planned_distance_max': _stats(dist, max),
@@ -643,20 +669,23 @@ def render_summary_md(summary, meta):
         f" / nav2_planner {meta['env'].get('nav2_planner')}",
         '- planned_distance 는 계획 경로 길이(m)이며 실제 주행 거리가 아니다. planning_time 은 planner_server 가 보고한 값(ms).',
         '- 장애물 거리는 경로 점(로봇 중심)에서 가장 가까운 점유 칸까지의 거리(m, 칸 단위 정확도)다. '
-        '꺾인 각도 합은 경로를 0.10 m 간격으로 다시 찍어 더한 방향 변화(도)다.']
+        '꺾인 각도 합은 경로를 0.10 m 간격으로 다시 찍어 더한 방향 변화(도)다.',
+        '- 0.10 m 간격 길이는 같은 방식으로 다시 찍은 경로의 길이다. 경로 길이와의 차이는 0.10 m 보다 잔 지그재그에서 나온 길이다.']
     for variant, info in (meta.get('map_variants') or {}).items():
         lines.append(f"- 차단 지도 `{variant}` (`:blocked` 실행): `{info['map_version']}`, 상자 {info['obstacles']}")
     lines += [
         '',
-        '| 실행 | 기대 | 플래너 | 성공 | 기대 일치 | 상자 자리 통과 | 경로 길이 평균 (m) | 표준편차 | 최소 장애물 거리 (m) '
-        '| 평균 장애물 거리 (m) | 꺾인 각도 합 (도) | 계획 시간 중앙값 (ms) | 최대 | 왕복 중앙값 (ms) | 실패 사유 |',
-        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
+        '| 실행 | 기대 | 플래너 | 성공 | 기대 일치 | 상자 자리 통과 | 경로 길이 평균 (m) | 표준편차 | 0.10 m 간격 길이 (m) '
+        '| 최소 장애물 거리 (m) | 평균 장애물 거리 (m) | 꺾인 각도 합 (도) | 계획 시간 중앙값 (ms) | 최대 | 왕복 중앙값 (ms) '
+        '| 실패 사유 |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     for s in summary:
         crossings = '-' if s['obstacle_crossings'] == '' else f"{s['obstacle_crossings']}/{s['plan_successes']}"
         lines.append(
             f"| {s['scenario_id']} | {s['expected']} | {s['planner_id']} ({s['algorithm']}) "
             f"| {s['plan_successes']}/{s['trials']} | {s['expectation_met']}/{s['trials']} | {crossings} "
             f"| {_cell(s['planned_distance_mean'])} | {_cell(s['planned_distance_std'])} "
+            f"| {_cell(s['resampled_distance_mean'])} "
             f"| {_cell(s['min_clearance_min'])} | {_cell(s['mean_clearance_mean'])} | {_cell(s['turn_sum_deg_mean'])} "
             f"| {_cell(s['planning_time_median'])} | {_cell(s['planning_time_max'])} "
             f"| {_cell(s['roundtrip_time_median'])} | {s['failure_reasons'] or '-'} |")

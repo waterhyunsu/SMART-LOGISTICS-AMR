@@ -74,7 +74,8 @@ def render_svg(run, info, layers, paths, stats, blocked):
          f'height="{total_h}" font-family="sans-serif" role="img" aria-label="{escape(title)}">',
          f'<rect width="{total_w}" height="{total_h}" fill="{SURFACE}"/>',
          f'<text x="{PAD}" y="18" font-size="15" font-weight="600" fill="{INK}">{escape(title)}</text>',
-         f'<text x="{PAD}" y="36" font-size="12" fill="{MUTED}">{escape(sub)} · 격자 1 m</text>',
+         f'<text x="{PAD}" y="36" font-size="12" fill="{MUTED}">{escape(sub)} · 눈금 1 m · '
+         f'길이는 계획 경로 길이(실제 주행 거리 아님)</text>',
          f'<g transform="translate({PAD} {TITLE_H}) scale({SCALE})">',
          f'<rect width="{width}" height="{height}" fill="{UNKNOWN}"/>',
          f'<path d="{free}" fill="{FREE}"/>', f'<path d="{occupied}" fill="{OCCUPIED}"/>', '</g>']
@@ -111,6 +112,8 @@ def render_svg(run, info, layers, paths, stats, blocked):
         s = stats.get(alg, {})
         if alg in paths:
             text = (f"{label}: {float(s['planned_distance_mean']):.2f} m"
+                    + (f" (0.10 m 간격 {float(s['resampled_distance_mean']):.2f} m)"
+                       if s.get('resampled_distance_mean') else '')
                     + (f" · 최소 장애물 거리 {float(s['min_clearance_min']):.2f} m"
                        if s.get('min_clearance_min') else '')
                     + (f" · 꺾인 각도 합 {float(s['turn_sum_deg_mean']):.0f}°" if s.get('turn_sum_deg_mean') else ''))
@@ -124,7 +127,11 @@ def render_svg(run, info, layers, paths, stats, blocked):
     o.append(f'<text x="{PAD + 18}" y="{ly + 4}" font-size="12.5" fill="{MUTED}">출발</text>')
     o.append(f'<rect x="{PAD + 62}" y="{ly - 5}" width="10" height="10" fill="{SURFACE}" stroke="{INK}" '
              f'stroke-width="2"/>')
-    o.append(f'<text x="{PAD + 80}" y="{ly + 4}" font-size="12.5" fill="{MUTED}">목표 · 경로 길이는 계획 경로 길이(실제 주행 거리 아님)</text>')
+    note = '목표'
+    if len(paths) == 2:
+        a, b = (paths[alg]['poses'] for alg in STYLE)
+        note += f' · 두 경로 사이 최대 간격 {core.max_separation(a, b):.2f} m'
+    o.append(f'<text x="{PAD + 80}" y="{ly + 4}" font-size="12.5" fill="{MUTED}">{escape(note)}</text>')
     o.append('</svg>')
     return '\n'.join(o) + '\n'
 
