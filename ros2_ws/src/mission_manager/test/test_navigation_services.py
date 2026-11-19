@@ -8,6 +8,8 @@ from time import monotonic
 from uuid import uuid4
 
 import pytest
+from nav2_msgs.action import NavigateToPose
+from rclpy.action import ActionClient
 from rclpy.action.graph import get_action_names_and_types
 from rclpy.context import Context
 from rclpy.executors import SingleThreadedExecutor
@@ -190,3 +192,46 @@ def test_d_exits_after_acceptance(tmp_path, monkeypatch):
         lookup = adapter.lookup()
         assert lookup and adapter.last_report.observation is NavigationObservation.DISCONNECTED
         assert adapter.approve_retry(lookup, explicitly_approved=True) is None
+
+
+def test_retry_after_not_ready_then_nav2_start(tmp_path, monkeypatch):
+    monkeypatch.setenv('ROS_AUTOMATIC_DISCOVERY_RANGE', 'LOCALHOST')
+    namespace = '/gate1_' + uuid4().hex
+    with ExitStack() as stack, manager(tmp_path / 'mission.sqlite', namespace) as (node, executor):
+        _, d_log = run_process(stack, tmp_path, namespace, 'd', [])
+        adapter = NavigationServices(node, timeout_sec=3.0)
+        until(executor, adapter.dispatch_client.service_is_ready)
+        node.state.add_steps(job('one'))
+        assert node.state.apply(mock_optimizer(node.state.request('HOME', 'r1')))
+        goal = node.claim_next_goal()
+        assert adapter.dispatch(goal)
+        until(executor, lambda: node.state.recovery_required)
+        original_id = node.state.nav_goal_id
+        assert original_id
+        d_dispatch = next(line for line in d_log.read_text().splitlines()
+                          if '[dispatch_goal]' in line and original_id in line)
+        assert '→ NOT_READY' in d_dispatch and '누적 Nav2 송신 0회' in d_dispatch
+
+        _, nav_log = run_process(stack, tmp_path, namespace, 'server', ['delay_sec:=0.2'])
+        action = ActionClient(node, NavigateToPose, 'navigate_to_pose')
+        until(executor, action.server_is_ready)
+        until(executor, adapter.lookup_client.service_is_ready)
+        lookup = adapter.lookup()
+        assert lookup is not None
+        until(executor, lambda: adapter.last_report is not None)
+        assert adapter.last_report.lookup == lookup
+        assert node.current_goal() == goal and node.state.nav_goal_id == original_id
+        assert adapter.approve_retry(lookup) is None
+        assert not adapter.dispatch(goal)
+        assert '[GOAL]' not in nav_log.read_text()
+
+        retry = adapter.approve_retry(lookup, explicitly_approved=True)
+        if retry is None and adapter.last_report.observation is NavigationObservation.UNKNOWN:
+            pytest.xfail('PR #14: D does not record the NOT_READY refusal for recovery lookup')
+        assert retry is not None, 'confirmed refusal should allow an explicit retry after Nav2 starts'
+        assert retry.attempt_id != goal.attempt_id
+        assert '[GOAL]' not in nav_log.read_text()
+        assert adapter.dispatch(retry)
+        assert node.state.nav_goal_id != original_id
+        until(executor, lambda: node.state.waiting)
+        assert nav_log.read_text().count('[GOAL]') == 1

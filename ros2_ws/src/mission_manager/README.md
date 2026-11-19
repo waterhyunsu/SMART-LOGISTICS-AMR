@@ -165,3 +165,26 @@ source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 python3 -m pytest -q src/mission_manager/test/test_navigation_services.py
 ```
+
+### 검토 중인 복구 사례: Nav2가 늦게 시작되는 경우
+
+D가 Nav2 탐색 중에 요청을 받으면 `dispatch_goal`에 `NOT_READY`를
+반환하면서 송신을 보류한다. 현재 D는 이 거절을 조회 가능한 기록으로
+남기지 않아, Nav2가 준비된 뒤에도 해당 UUID의 `lookup_goal`이
+`UNKNOWN`을 반환하고 A의 명시적 재시도 승인도 진행되지 않는다.
+
+후속 구현에서 아래 기준을 A·D가 함께 검토한다.
+
+| A가 받은 근거 | 복구 처리 기준 |
+| --- | --- |
+| 현재 Attempt ID와 UUID에 일치하는 `NOT_READY` 응답을 기한 내 받음 | 요청 단위의 송신 전 거절로 기록한다. D가 그 시도의 활성 실행과 지연 송신·대기 요청이 없음을 확인하고 Nav2가 준비된 뒤, A의 명시적 승인을 받아 새 Attempt ID·UUID로 송신한다. D는 이 판단을 최신 `lookup_goal`에서 같은 실행 문맥과 Check ID로 확인할 수 있게 한다. |
+| 응답 유실·시간 초과·통신 단절, 문맥 불일치 또는 D 재시작 후 거절을 증명할 기록 없음 | 기존 Attempt ID·UUID와 복구 제한을 유지한다. 같은 목표가 이미 전달됐거나 나중에 전달될 수 있으므로 D가 실행과 지연 송신 모두 부재를 증명할 때까지 새 목표를 승인하거나 송신하지 않는다. |
+
+거절 이유 문자열이나 Nav2가 나중에 준비됐다는 사실만으로 실행 부재를
+판정하지 않는다. 이번 변경의 재현 테스트는 알려진 결함에서만 `XFAIL`을
+표시한다. 아래 명령은 그 표시를 해제해 실제 실패를 확인한다.
+
+```bash
+python3 -m pytest -q --runxfail src/mission_manager/test/test_navigation_services.py \
+  -k retry_after_not_ready_then_nav2_start
+```
