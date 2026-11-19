@@ -359,6 +359,8 @@ Gate 통과 여부는 실제 시험 기록으로 판단한다.
 - 안전 정지 수단 확인
 - 장비 준비 절차 문서화
 
+2026-11-19에 로봇 내부에서 Jazzy Bringup, OpenCR·LDS-02 연결과 `/scan`·`/odom` 수신을 확인했다. Gate 0 전체 판정에는 필수 TF, 개발 PC↔로봇 DDS 및 안전 정지 확인이 남아 있다. [실차 환경·Bringup 기록](TURTLEBOT3_BRINGUP.md)
+
 ### Gate 1 — 기본 저속 구동
 
 **주요 담당: C·D**
@@ -623,11 +625,11 @@ TF, 위치 추정, Lifecycle, Controller 및 구동 경로까지 확인한 후 �
 
 ## 13. 현재 미확인 사항
 
-- [ ] TurtleBot3 컴퓨팅 보드 모델 및 CPU 아키텍처
-- [ ] 기존 로봇 OS·ROS2 버전과 Jazzy 전환 가능 여부
-- [ ] OpenCR 펌웨어 및 센서 드라이버의 Jazzy 호환성
-- [ ] 실제 로봇 IP 및 ROS_DOMAIN_ID
-- [ ] 센서 종류 및 실제 드라이버 버전
+- [x] Raspberry Pi 4 ARM64에서 Ubuntu 24.04 / ROS2 Jazzy 실행
+- [x] OpenCR 펌웨어 업로드 및 LDS-02 기본 수신
+- [ ] 개발 PC↔로봇 DDS 통신 및 공용 ROS_DOMAIN_ID
+- [x] LDS-02와 드라이버 `ld08_driver` 확인
+- [ ] 센서 드라이버의 설치 버전 기록
 - [ ] 필수 Topic 및 TF Frame
 - [ ] 카메라 장착·활성화 상태
 - [ ] Nav2 Lifecycle 상태
