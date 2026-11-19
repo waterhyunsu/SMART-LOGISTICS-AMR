@@ -1,0 +1,22 @@
+# Local trial image (this PC only, not in the team repo): ROS 2 Jazzy + Gazebo Harmonic (ros_gz) + Nav2 + TurtleBot3.
+# Purpose: check whether Gazebo runs under WSL2/WSLg on this PC. The planner bench image is separate and unchanged.
+#
+#   docker build -t amr-sim:jazzy /mnt/d/teamfinal/claude_tools/sim
+FROM ros:jazzy-ros-base
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ros-jazzy-ros-gz \
+        ros-jazzy-navigation2 \
+        ros-jazzy-nav2-bringup \
+        ros-jazzy-nav2-minimal-tb3-sim \
+        ros-jazzy-turtlebot3-gazebo \
+        ros-jazzy-turtlebot3-navigation2 \
+        ros-jazzy-rviz2 \
+        mesa-utils \
+        python3-yaml \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV TURTLEBOT3_MODEL=waffle_pi
+ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+WORKDIR /repo
