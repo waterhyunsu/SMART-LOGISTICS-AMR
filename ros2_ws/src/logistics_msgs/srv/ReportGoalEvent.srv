@@ -1,0 +1,24 @@
+# D -> A: Nav2 goal event, sent with the original execution context.
+# A checks the context against its current attempt and answers whether it
+# applied the event. Stale contexts and resends must not change A's state.
+string mission_id
+string step_id            # empty string = standalone HOME return
+uint64 plan_version
+string waypoint_id
+string attempt_id
+string nav_goal_id
+
+uint8 EVENT_ACCEPTED=1
+uint8 EVENT_REJECTED=2
+uint8 EVENT_SUCCEEDED=3
+uint8 EVENT_ABORTED=4
+uint8 EVENT_CANCELED=5
+uint8 EVENT_UNCERTAIN=6   # accept timeout, goal response error, UUID mismatch, result lookup failure
+
+uint8 event
+uint64 event_seq          # D-side sequence number; a resend keeps the same value
+int32 nav2_error_code
+string detail
+---
+bool handled              # true only when the context matches and the event is new
+string reason
