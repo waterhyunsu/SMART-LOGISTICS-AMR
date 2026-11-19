@@ -82,9 +82,9 @@ SMART-LOGISTICS-AMR/
         └── CODEX_FULL_BRIEF.md
 ```
 
-위 ROS2 패키지 디렉터리는 향후 생성할 **권장 구조**이며, 현재 실제 파일이 생성되었다는 의미가 아니다.
+위 5개 ROS2 패키지 디렉터리는 `main`에 생성되어 있다. 현재 구현·검증 범위는 [루트 README](../README.md)를 따른다.
 
-B는 첫 실험 PR에서 저장소 루트의 `experiments/path_planner/`를 생성해 플래너 설정·재현 스크립트·측정 결과를 관리한다. Phase 0 기본 ROS2 패키지는 5개다.
+B는 `feat/b-path-planner` 브랜치의 `experiments/path_planner/`에서 실험을 진행한다. [B 개발 가이드](TEAM_GUIDES/B_PATH_PLANNER.md)
 
 ---
 

@@ -15,6 +15,17 @@ ROS2 Jazzy·Nav2 기반 TurtleBot3 Waffle Pi를 활용한 5인 졸업 프로젝�
 
 > 개발 PC의 ROS2 Jazzy 환경은 기본 동작을 확인했다. TurtleBot3 실차의 Jazzy 호환성 및 통합 주행은 별도 검증이 필요하다.
 
+## 처음 개발을 시작한다면
+
+코드·문서는 Mac에서도 읽을 수 있다. 공통 ROS2 빌드와 테스트는 Ubuntu 24.04의 Bash와 ROS2 Jazzy, 시스템 Python 3.12를 사용한다. 새 Ubuntu 환경에서 먼저 Jazzy와 개발 도구(`ros-dev-tools`, `colcon`, `rosdep`)를 준비한다. [Jazzy 설치 안내](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html)
+
+```bash
+git clone https://github.com/waterhyunsu/SMART-LOGISTICS-AMR.git
+cd SMART-LOGISTICS-AMR
+```
+
+클론은 처음 한 번만 한다. 이미 클론했다면 해당 폴더에서 작업을 보존하고 `git switch main`과 `git pull --ff-only origin main`으로 동기화한다. [팀원별 시작 경로와 브랜치 선택](docs/TEAM_GUIDES/README.md)을 확인한 뒤 아래 공통 빌드를 실행한다.
+
 ## 1. 프로젝트 목표
 
 복수의 물류 작업을 등록하고 수거·전달 선후 관계와 Nav2 계획 경로 비용을 기반으로 방문 순서를 최적화한다.
@@ -64,6 +75,8 @@ SMART-LOGISTICS-AMR/
 │   ├── INTERFACES.md
 │   ├── SIM_TO_REAL.md
 │   ├── DECISIONS.md
+│   ├── INTEGRATION_A_D_HANDOFF.md
+│   ├── TEAM_GUIDES/
 │   └── reference/
 │       ├── ORIGINAL_PROPOSAL.md
 │       └── CODEX_FULL_BRIEF.md
@@ -73,7 +86,7 @@ SMART-LOGISTICS-AMR/
 
 팀원별 개발 범위·착수 명령과 AI 프롬프트는 [병렬 개발 가이드](docs/TEAM_GUIDES/README.md)에 있다.
 
-### 3.1 Phase 0 공통 기반 빌드 및 MOCK 검증
+### 3.1 공통 빌드 및 MOCK 검증
 
 Ubuntu 24.04의 Bash에서 저장소 루트를 시작 위치로 사용한다.
 
@@ -85,24 +98,26 @@ colcon build --symlink-install
 source install/setup.bash
 ros2 interface show logistics_msgs/srv/OptimizeRoute
 python3 -c 'from logistics_msgs.msg import TaskStep; from logistics_msgs.srv import OptimizeRoute'
-colcon test
+ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST colcon test
 colcon test-result --verbose
 ```
 
-A의 계약 테스트만 반복할 때는 같은 셸에서 다음 명령을 실행한다.
+`rosdep`을 처음 사용하는 시스템에서는 `sudo rosdep init`을 한 번 실행하고 `rosdep update`로 인덱스를 받는다. 이미 초기화된 환경에서는 `rosdep update`만 필요하다. 의존성이 부족하면 Jazzy를 source한 `ros2_ws`에서 `rosdep install --from-paths src --ignore-src --rosdistro jazzy -y`를 실행하고 다시 확인한다. [rosdep 공식 안내](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Rosdep.html)
+
+A의 패키지 테스트만 실행하려면 설치 overlay를 source한 같은 셸에서 다음 명령을 실행한다.
 
 ```bash
-python3 -m pytest -q src/mission_manager/test
+ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST python3 -m pytest -q src/mission_manager/test
 ```
 
-MOCK은 생성된 요청과 응답을 메모리에서 직렬화해 전달한다. 실행에 Nav2 서버, DDS 서비스 서버, Gazebo, 실제 로봇은 필요하지 않다.
+테스트는 메모리 내 상태 검증, 파일 SQLite 복구, 테스트용 OptimizeRoute 서버와의 ROS2 DDS 왕복, D·E 대역을 사용하는 미션 시나리오를 포함한다. 공통 테스트에는 실제 Nav2 서버, 지도, Gazebo, 로봇이 필요 없다.
 
 | 담당 | 개발 시작 위치 | 첫 연동 지점 |
 |---|---|---|
-| A | `mission_manager`, `logistics_msgs` | 계약 테스트의 후보 검증과 인계 확인 예제 |
-| B | 전역 플래너 비교 실험 | C·D와 플래너 설정 ID 및 실험 조건 공유 |
+| A | `mission_manager`, `logistics_msgs` | 독립 MOCK 구현 완료. D 연동 계약 검토 대기 |
+| B | `experiments/path_planner/` | 작업 중인 원격 `feat/b-path-planner`를 추적해 비교 실험을 이어간다 |
 | C | `route_optimizer`, `amr_bringup` | 최적화는 OptimizeRoute 서비스로 입출력을 맞추고, Bringup은 별도로 센서·TF 점검 |
-| D | `amr_navigation` | C의 Bringup을 바탕으로 Nav2 표준 목표 실행과 도착 결과 검증 |
+| D | `amr_navigation` | 지도 없는 별도 프로세스 MOCK부터 준비. [A↔D 인수인계](docs/INTEGRATION_A_D_HANDOFF.md) |
 | E | `web_control/` | 작업 등록·인계 요청과 A가 제공할 상태를 기준으로 웹·DB 개발 |
 
 개별 패키지와 의존 패키지를 빌드할 때는 워크스페이스에서 `colcon build --symlink-install --packages-up-to mission_manager`의 마지막 인자를 해당 패키지명으로 바꾼다. 공통 타입 변경 후에는 전체 빌드와 테스트를 수행한다. 필드 의미와 승인 범위는 [인터페이스 문서](docs/INTERFACES.md)를 따른다.
@@ -251,7 +266,7 @@ LIBGL_ALWAYS_SOFTWARE=1 rviz2
 
 1. 프로젝트 루트를 Codex에서 연다.
 2. `AGENTS.md`와 현재 작업 관련 문서를 확인한다.
-3. 초기 검증 시 `prompts/01_INITIAL_ARCHITECTURE_REVIEW.md`를 사용한다.
+3. [공통 AI 개발 프롬프트](docs/TEAM_GUIDES/COMMON_AI_PROMPT.md)와 담당 가이드를 함께 사용한다.
 4. 승인된 구조와 실제 저장소·환경의 차이를 확인한다.
 5. 이후 A 담당자의 작업 승인 범위 내에서 구현과 검증을 진행한다.
 
@@ -290,9 +305,10 @@ DWB·RPP 비교, 고급 예외 처리, 실험 분석 고도화, 필요 시 ArUco
 | 시각화 | RViz 기본 실행 | 확인 |
 | 실차 Bringup | TurtleBot3 하드웨어·센서 | 미검증 |
 | 실차 Nav2 | AMCL·목표 주행 | 미검증 |
-| 물류 미션 | 작업 등록부터 HOME 복귀 | 미구현·미검증 |
+| A 미션 실행 | 주문·재계획·인계·HOME 완료 및 복구 | MOCK 검증 완료([PR #8](https://github.com/waterhyunsu/SMART-LOGISTICS-AMR/pull/8)) |
+| 실제 모듈 통합 | A↔C 실제 서버, A↔D 전송·복구, A↔E 웹 인계 | 통합 대기 |
 
-위 상태는 초기 Mac UTM 개발환경의 확인 결과이며, 프로젝트 전체 기능의 완료 상태를 의미하지 않는다.
+Gazebo·RViz 기본 동작은 초기 UTM 환경에서 확인했다. 새 강의실 지도·Waypoint Pose와 실제 물류 주행 검증은 별도 단계에서 다룬다.
 
 실차 통합 절차와 Gate 0~5의 세부 기준은 `docs/SIM_TO_REAL.md`를 따른다.
 
