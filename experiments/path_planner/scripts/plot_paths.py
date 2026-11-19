@@ -21,8 +21,10 @@ SCALE = 4                      # px per map cell
 PAD, TITLE_H, LEGEND_ROW = 12, 44, 22
 SURFACE, INK, MUTED = '#fcfcfb', '#0b0b0b', '#52514e'
 UNKNOWN, FREE, OCCUPIED, BOX = '#e4e3df', '#ffffff', '#2b2b2a', '#8a8983'
-# fixed colour per planner (validated pair); A* is the wide line underneath, Dijkstra the thin line on top
-STYLE = {'astar': ('#eb6834', 6, 'NavFn A*'), 'dijkstra': ('#2a78d6', 2.5, 'NavFn Dijkstra')}
+# fixed colour per planner (validated set), drawn in this order: NavFn A* is the wide line underneath, Smac 2D the
+# middle one, NavFn Dijkstra the thin line on top. A planner that is not in the result is left out.
+STYLE = {'astar': ('#eb6834', 6, 'NavFn A*'), 'smac2d': ('#1baf7a', 4, 'Smac 2D'),
+         'dijkstra': ('#2a78d6', 2, 'NavFn Dijkstra')}
 
 
 def _runs(row, value):
@@ -61,7 +63,8 @@ def render_svg(run, info, layers, paths, stats, blocked):
     width, height, free, occupied = layers
     res, (ox, oy) = info['resolution'], info['origin']
     map_w, map_h = width * SCALE, height * SCALE
-    legend_h = LEGEND_ROW * (len(STYLE) + 1) + PAD
+    style = {alg: v for alg, v in STYLE.items() if alg in stats or alg in paths}
+    legend_h = LEGEND_ROW * (len(style) + 1) + PAD
     total_w, total_h = map_w + 2 * PAD, TITLE_H + map_h + legend_h + PAD
 
     def px(x, y):
@@ -97,7 +100,7 @@ def render_svg(run, info, layers, paths, stats, blocked):
             f'fill="none" stroke="{INK}" stroke-width="1.2" stroke-dasharray="4 3"'
         o.append(f'<rect x="{round(cx - w / 2, 1)}" y="{round(cy - h / 2, 1)}" width="{round(w, 1)}" '
                  f'height="{round(h, 1)}" transform="rotate({-box.yaw_deg} {cx} {cy})" {look}/>')
-    for alg, (color, stroke, label) in STYLE.items():
+    for alg, (color, stroke, label) in style.items():
         if alg in paths:
             pts = ' '.join('{},{}'.format(*px(x, y)) for x, y in paths[alg]['poses'])
             o.append(f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="{stroke}" '
@@ -108,7 +111,7 @@ def render_svg(run, info, layers, paths, stats, blocked):
     o.append(f'<rect x="{gx - 6}" y="{gy - 6}" width="12" height="12" fill="{SURFACE}" stroke="{INK}" '
              f'stroke-width="2.5"/>')
     ly = TITLE_H + map_h + PAD + 6
-    for alg, (color, stroke, label) in STYLE.items():
+    for alg, (color, stroke, label) in style.items():
         s = stats.get(alg, {})
         if alg in paths:
             text = (f"{label}: {float(s['planned_distance_mean']):.2f} m"
@@ -128,9 +131,10 @@ def render_svg(run, info, layers, paths, stats, blocked):
     o.append(f'<rect x="{PAD + 62}" y="{ly - 5}" width="10" height="10" fill="{SURFACE}" stroke="{INK}" '
              f'stroke-width="2"/>')
     note = '목표'
-    if len(paths) == 2:
-        a, b = (paths[alg]['poses'] for alg in STYLE)
-        note += f' · 두 경로 사이 최대 간격 {core.max_separation(a, b):.2f} m'
+    if 'dijkstra' in paths and len(paths) > 1:      # how far each other path strays from the Dijkstra path
+        gaps = [f"{style[alg][2]} {core.max_separation(paths[alg]['poses'], paths['dijkstra']['poses']):.2f} m"
+                for alg in style if alg in paths and alg != 'dijkstra']
+        note += ' · Dijkstra 경로와의 최대 간격: ' + ', '.join(gaps)
     o.append(f'<text x="{PAD + 80}" y="{ly + 4}" font-size="12.5" fill="{MUTED}">{escape(note)}</text>')
     o.append('</svg>')
     return '\n'.join(o) + '\n'

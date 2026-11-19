@@ -31,7 +31,6 @@ import bench_core as core  # noqa: E402
 BENCH_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_PARAMS = os.path.join(BENCH_DIR, 'config', 'navfn_compare.yaml')
 DEFAULT_OUT = os.path.join(BENCH_DIR, 'results')
-CHECKED_KEYS = ('plugin', 'use_astar', 'tolerance', 'allow_unknown')
 
 
 def parse_args(argv=None):
@@ -241,13 +240,14 @@ def check_planner_params(node, planner_node, configs, timeout):
     client = AsyncParameterClient(node, planner_node)
     if not client.wait_for_services(timeout_sec=timeout):
         raise RuntimeError(f'parameter services of /{planner_node} not available')
-    names = ['planner_plugins'] + [f'{c.planner_id}.{k}' for c in configs for k in CHECKED_KEYS]
+    wanted = {f'{c.planner_id}.{k}': v for c in configs for k, v in core.flat_params(c.params).items()}
+    names = ['planner_plugins'] + list(wanted)
     future = client.get_parameters(names)
     if not spin_until(node, future, timeout):
         raise RuntimeError(f'get_parameters on /{planner_node} timed out')
     actual = {n: parameter_value_to_python(v) for n, v in zip(names, future.result().values)}
     expected = {'planner_plugins': [c.planner_id for c in configs]}
-    expected.update({f'{c.planner_id}.{k}': c.params.get(k) for c in configs for k in CHECKED_KEYS})
+    expected.update(wanted)
     wrong = {}
     for n, want in expected.items():
         have = actual.get(n)

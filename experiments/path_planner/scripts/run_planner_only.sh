@@ -19,7 +19,14 @@ LOG="$(mktemp -d)/planner_bench_launch.log"
 echo "map: $MAP"
 echo "launch log: $LOG"
 
-ros2 launch "$BENCH/launch/planner_bench.launch.py" map:="$MAP" >"$LOG" 2>&1 &
+# the launch file must load the same params file run_compare.py checks against (--params, default navfn_compare)
+PARAMS="$BENCH/config/navfn_compare.yaml"
+ARGS=("$@")
+for i in "${!ARGS[@]}"; do
+    [ "${ARGS[$i]}" = "--params" ] && PARAMS="$(realpath "${ARGS[$((i + 1))]}")"
+done
+echo "params: $PARAMS"
+ros2 launch "$BENCH/launch/planner_bench.launch.py" map:="$MAP" params_file:="$PARAMS" >"$LOG" 2>&1 &
 LAUNCH_PID=$!
 cleanup() {
     # SIGINT is ignored by background jobs of a non-interactive shell, so stop ros2 launch with SIGTERM.

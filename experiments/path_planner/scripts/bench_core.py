@@ -208,8 +208,14 @@ def load_scenarios(path):
                        str(map_doc.get('frame_id', 'map')), tuple(runs))
 
 
+NAVFN_PLUGIN = 'nav2_navfn_planner'
+# Other planner plugins that may join the comparison as extra candidates: {plugin class: algorithm label}.
+# 'astar' and 'dijkstra' stay the labels of the two NavFn modes; Smac Planner 2D is a textbook-style grid A*.
+OTHER_PLUGINS = {'nav2_smac_planner::SmacPlanner2D': 'smac2d'}
+
+
 def load_planner_configs(path):
-    """NavFn planner plugins from a planner_server params file, in planner_plugins order."""
+    """Planner plugins from a planner_server params file, in planner_plugins order (NavFn modes and OTHER_PLUGINS)."""
     doc = _load_yaml(path)
     try:
         params = doc['planner_server']['ros__parameters']
@@ -219,12 +225,28 @@ def load_planner_configs(path):
     configs = []
     for pid in ids:
         plugin = params.get(pid)
-        if not isinstance(plugin, dict) or not str(plugin.get('plugin', '')).startswith('nav2_navfn_planner'):
-            raise ValueError(f'{pid}: not a NavFn planner plugin')
-        if not isinstance(plugin.get('use_astar'), bool):
-            raise ValueError(f'{pid}: use_astar must be true or false')
-        configs.append(PlannerConfig(pid, 'astar' if plugin['use_astar'] else 'dijkstra', dict(plugin)))
+        name = str(plugin.get('plugin', '')) if isinstance(plugin, dict) else ''
+        if name.startswith(NAVFN_PLUGIN):
+            if not isinstance(plugin.get('use_astar'), bool):
+                raise ValueError(f'{pid}: use_astar must be true or false')
+            algorithm = 'astar' if plugin['use_astar'] else 'dijkstra'
+        elif name in OTHER_PLUGINS:
+            algorithm = OTHER_PLUGINS[name]
+        else:
+            raise ValueError(f'{pid}: not a NavFn planner plugin or one of {sorted(OTHER_PLUGINS)}')
+        configs.append(PlannerConfig(pid, algorithm, dict(plugin)))
     return configs
+
+
+def flat_params(params, prefix=''):
+    """{'a.b': value} for nested plugin parameters, the names planner_server uses for them."""
+    out = {}
+    for key, value in params.items():
+        if isinstance(value, dict):
+            out.update(flat_params(value, f'{prefix}{key}.'))
+        else:
+            out[f'{prefix}{key}'] = value
+    return out
 
 
 def config_differences(configs):
@@ -233,12 +255,19 @@ def config_differences(configs):
 
 
 def check_comparison_pair(configs):
-    """The comparison is valid only for one A* and one Dijkstra NavFn that differ in nothing but use_astar."""
-    if sorted(c.algorithm for c in configs) != ['astar', 'dijkstra']:
+    """The comparison needs one A* and one Dijkstra NavFn that differ in nothing but use_astar.
+
+    Other candidates (OTHER_PLUGINS) may be listed next to that pair; each algorithm may appear only once.
+    """
+    navfn = [c for c in configs if c.algorithm in ('astar', 'dijkstra')]
+    if sorted(c.algorithm for c in navfn) != ['astar', 'dijkstra']:
         raise ValueError('need exactly one NavFn with use_astar: true and one with use_astar: false')
-    diff = config_differences(configs)
+    diff = config_differences(navfn)
     if diff != ['use_astar']:
         raise ValueError(f'planner configs must differ only in use_astar, they differ in {diff}')
+    labels = [c.algorithm for c in configs]
+    if len(set(labels)) != len(labels):
+        raise ValueError(f'every candidate algorithm may appear once, got {labels}')
 
 
 def _digest(paths_and_kinds):
@@ -538,7 +567,7 @@ def run_trials(scenarios, planners, plan_fn, *, repeat, warmup, run_mode, experi
                clearance_fields=None, path_store=None):
     """Run every scenario run with every planner, ``warmup`` + ``repeat`` times.
 
-    Both planners get the identical start/goal back to back; their order alternates per repetition so neither
+    All planners get the identical start/goal back to back; their order rotates per repetition so none
     always runs first. Warmup rows are kept (warmup=True) and excluded from summaries.
 
     With map variants (pairs with obstacles), the runs on the scenario map come first, then the runs of each
@@ -569,7 +598,8 @@ def run_trials(scenarios, planners, plan_fn, *, repeat, warmup, run_mode, experi
         if variants:
             set_map(variant)
         for k in range(warmup + repeat):
-            ordered = list(planners) if k % 2 == 0 else list(reversed(planners))
+            shift = k % len(planners)                 # rotate so every planner takes every position in turn
+            ordered = list(planners[shift:]) + list(planners[:shift])
             for run in runs:
                 for order, cfg in enumerate(ordered, 1):
                     out = _call(plan_fn, cfg.planner_id, run.start, run.goal)

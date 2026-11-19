@@ -4,7 +4,9 @@
 #   - amcl: set_initial_pose true, initial_pose yaw 1.5708 (홈 (0, 0) 에서 +y 를 본다)
 #   - global/local costmap: robot_radius 0.15 -> 0.22, inflation 0.5 / 5.0 -> 0.55 / 3.0 (config/navfn_compare.yaml 과 같은 값)
 #   - map_server: yaml_filename 줄을 뺐다 (launch 인자 map 을 쓴다)
-# planner_server 는 NavFn 하나(GridBased)다. run_drive.py 가 시행마다 GridBased.use_astar 만 true/false 로 바꾼다.
+#   - planner_server: Smac2D 플러그인을 추가했다 (config/planner_candidates.yaml 의 Smac2D 블록과 같다)
+# planner_server 는 NavFn(GridBased)과 Smac2D 두 플러그인이다. run_drive.py 가 시행마다 planner_id 를 고정한 BT 로
+# 플러그인을 고르고, NavFn 은 GridBased.use_astar 를 true/false 로 바꾼다.
 # controller(DWB)·BT·AMCL 은 두 플래너에 똑같이 쓴다. D 의 배포 설정(amr_navigation)이 아니며, 그 설정이 나오면 그것으로 바꾼다.
 
 amcl:
@@ -290,12 +292,28 @@ map_saver:
 planner_server:
   ros__parameters:
     expected_planner_frequency: 10.0
-    planner_plugins: ["GridBased"]
+    planner_plugins: ["GridBased", "Smac2D"]
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
       tolerance: 0.5
       use_astar: false
       allow_unknown: true
+    Smac2D:
+      plugin: "nav2_smac_planner::SmacPlanner2D"
+      tolerance: 0.5
+      downsample_costmap: false
+      downsampling_factor: 1
+      allow_unknown: true
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      max_planning_time: 2.0
+      cost_travel_multiplier: 2.0
+      use_final_approach_orientation: false
+      smoother:
+        max_iterations: 1000
+        w_smooth: 0.3
+        w_data: 0.2
+        tolerance: 1.0e-10
 
 behavior_server:
   ros__parameters:

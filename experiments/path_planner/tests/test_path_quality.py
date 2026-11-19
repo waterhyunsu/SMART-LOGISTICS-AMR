@@ -178,7 +178,7 @@ def test_figures_are_written_for_every_run(tmp_path):
     with open(os.path.join(out, 'paths_R1-D1_fwd_blocked.svg'), encoding='utf-8') as f:
         detour = f.read()
     assert detour.count('<polyline') == 2 and 'NavFn Dijkstra: ' in detour and '꺾인 각도 합 180°' in detour
-    assert '두 경로 사이 최대 간격 0.00 m' in detour and '(0.10 m 간격 ' in detour
+    assert 'Dijkstra 경로와의 최대 간격: NavFn A* 0.00 m' in detour and '(0.10 m 간격 ' in detour
     with open(os.path.join(out, 'paths_R1-D2_rev_blocked.svg'), encoding='utf-8') as f:
         failed = f.read()
     assert '<polyline' not in failed and failed.count('경로 없음 (NO_VALID_PATH)') == 2

@@ -4,6 +4,7 @@ import csv
 import json
 import math
 import os
+import re
 import statistics
 
 import bench_core as core
@@ -16,12 +17,14 @@ import bench_core as core
 DRIVE_FIELDS = core.EXPERIMENT_RESULT_FIELDS + [
     'scenario_set', 'scenario_version', 'pair_id', 'direction', 'map_variant', 'repetition', 'order', 'expected',
     'expectation_met', 'nav_status', 'error_code', 'recoveries', 'plan_count', 'last_plan_distance', 'final_error',
-    'timeout', 'start_x', 'start_y', 'start_yaw_deg', 'goal_x', 'goal_y', 'goal_yaw_deg', 'stamp']
+    'timeout', 'start_x', 'start_y', 'start_yaw_deg', 'goal_x', 'goal_y', 'goal_yaw_deg', 'stamp',
+    'true_start_error', 'true_final_error']
 DRIVE_SUMMARY_FIELDS = [
     'scenario_id', 'pair_id', 'direction', 'map_variant', 'expected', 'algorithm', 'trials', 'goal_successes',
     'success_rate', 'expectation_met', 'execution_time_mean', 'execution_time_std', 'execution_time_min',
     'execution_time_max', 'actual_distance_mean', 'actual_distance_std', 'planned_distance_mean',
-    'recoveries_mean', 'recoveries_max', 'final_error_max', 'failure_reasons']
+    'recoveries_mean', 'recoveries_max', 'final_error_max', 'failure_reasons', 'true_final_error_mean',
+    'true_final_error_max']
 
 
 def relative_pose_error(start, odom_start, odom_end, goal):
@@ -35,6 +38,17 @@ def relative_pose_error(start, odom_start, odom_end, goal):
     x = start[0] + math.cos(turn) * dx - math.sin(turn) * dy
     y = start[1] + math.sin(turn) * dx + math.cos(turn) * dy
     return math.dist((x, y), goal[:2])
+
+
+def parse_model_pose(text, model):
+    """(x, y) of ``model`` in a gz.msgs.Pose_V text dump (gz topic -e), or None. Zero fields are omitted there."""
+    for block in text.split('pose {')[1:]:
+        if f'name: "{model}"' not in block:
+            continue
+        position = block.split('position {', 1)[1].split('}', 1)[0] if 'position {' in block else ''
+        found = dict(re.findall(r'\b([xyz]):\s*(-?[0-9.eE+-]+)', position))
+        return float(found.get('x', 0.0)), float(found.get('y', 0.0))
+    return None
 
 
 def _num(rows, key):
@@ -66,7 +80,9 @@ def summarize(rows):
             'planned_distance_mean': _stat(_num(ok, 'planned_distance'), statistics.fmean),
             'recoveries_mean': _stat(rec, statistics.fmean, 2), 'recoveries_max': _stat(rec, max, 0),
             'final_error_max': _stat(_num(ok, 'final_error'), max),
-            'failure_reasons': ';'.join(sorted({r['failure_reason'] for r in rs if r['failure_reason']}))})
+            'failure_reasons': ';'.join(sorted({r['failure_reason'] for r in rs if r['failure_reason']})),
+            'true_final_error_mean': _stat(_num(ok, 'true_final_error'), statistics.fmean),
+            'true_final_error_max': _stat(_num(ok, 'true_final_error'), max)})
     return out
 
 
@@ -85,10 +101,11 @@ def render_summary_md(summary, meta):
         '- 주행 시간은 목표 전송부터 결과까지의 시뮬레이션 시간(s), 주행 거리는 그동안의 바퀴 오도메트리 경로 길이(m)다. '
         '시간·거리 통계는 도착한 시행만 쓴다.',
         '- 첫 계획 길이는 목표를 보낸 뒤 처음 받은 계획 경로의 길이(m)이며 실제 주행 거리가 아니다.',
+        '- 도착 오차는 주행이 끝났을 때 Gazebo 의 실제 로봇 위치와 목표 사이 거리(m)다. 도착한 시행만 쓴다.',
         '',
         '| 실행 | 기대 | 알고리즘 | 도착 | 기대 일치 | 주행 시간 평균 (s) | 표준편차 | 최소~최대 | 주행 거리 평균 (m) | 표준편차 '
-        '| 첫 계획 길이 평균 (m) | 복구 평균 | 복구 최대 | 실패 사유 |',
-        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
+        '| 첫 계획 길이 평균 (m) | 복구 평균 | 복구 최대 | 도착 오차 평균 (m) | 최대 | 실패 사유 |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     for s in summary:
         span = '-' if s['execution_time_min'] == '' else f"{s['execution_time_min']}~{s['execution_time_max']}"
         lines.append(
@@ -96,7 +113,8 @@ def render_summary_md(summary, meta):
             f"| {s['expectation_met']}/{s['trials']} | {_cell(s['execution_time_mean'])} "
             f"| {_cell(s['execution_time_std'])} | {span} | {_cell(s['actual_distance_mean'])} "
             f"| {_cell(s['actual_distance_std'])} | {_cell(s['planned_distance_mean'])} "
-            f"| {_cell(s['recoveries_mean'])} | {_cell(s['recoveries_max'])} | {s['failure_reasons'] or '-'} |")
+            f"| {_cell(s['recoveries_mean'])} | {_cell(s['recoveries_max'])} | {_cell(s['true_final_error_mean'])} "
+            f"| {_cell(s['true_final_error_max'])} | {s['failure_reasons'] or '-'} |")
     return '\n'.join(lines) + '\n'
 
 

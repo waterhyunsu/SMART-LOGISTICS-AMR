@@ -17,6 +17,7 @@ import os
 import platform
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 
@@ -41,7 +42,9 @@ def parse_args(argv=None):
     p.add_argument('--out', default=DEFAULT_OUT)
     p.add_argument('--world', default='lecture_hall_real', help='Gazebo world name')
     p.add_argument('--robot', default='waffle_pi', help='Gazebo model name of the robot')
-    p.add_argument('--planner', default='GridBased', help='planner plugin id whose use_astar is switched')
+    p.add_argument('--planner', default='GridBased', help='NavFn plugin id whose use_astar is switched')
+    p.add_argument('--smac', default='Smac2D', help='Smac Planner 2D plugin id (left out when not loaded)')
+    p.add_argument('--algorithms', default='', help='comma separated subset of astar,dijkstra,smac2d')
     p.add_argument('--timeout', type=float, default=180.0, help='simulation s allowed for one drive')
     p.add_argument('--server-timeout', type=float, default=120.0, help='wall s to wait for Nav2 to come up')
     p.add_argument('--git-commit', default='')
@@ -69,6 +72,38 @@ def gz_service(world, name, reqtype, req, attempts=4):
         last = (out.stdout.strip() + ' ' + out.stderr.strip())[-200:]
         time.sleep(1.0)
     raise RuntimeError(f'gz service {name} failed {attempts} times: {last}')
+
+
+def planner_trees(planner_ids, out_dir):
+    """{planner id: BT xml path}: Nav2's default NavigateToPose tree with ComputePathToPose fixed to that planner.
+
+    The default tree takes the planner from a selector topic. A file with the id written in makes the choice
+    explicit: bt_navigator either loads this tree or rejects the goal.
+    """
+    from ament_index_python.packages import get_package_share_directory
+    source = os.path.join(get_package_share_directory('nav2_bt_navigator'), 'behavior_trees',
+                          'navigate_to_pose_w_replanning_and_recovery.xml')
+    with open(source, encoding='utf-8') as f:
+        text = f.read()
+    marker = 'planner_id="{selected_planner}"'
+    if text.count(marker) != 1:
+        raise RuntimeError(f'{source}: expected one {marker}, cannot fix the planner')
+    trees = {}
+    for pid in planner_ids:
+        trees[pid] = os.path.join(out_dir, f'navigate_to_pose_{pid}.xml')
+        with open(trees[pid], 'w', encoding='utf-8') as f:
+            f.write(text.replace(marker, f'planner_id="{pid}"'))
+    return trees
+
+
+def gz_model_xy(world, model):
+    """True (x, y) of a model from Gazebo, or None when the pose topic gives nothing."""
+    try:
+        out = subprocess.run(['gz', 'topic', '-e', '-t', f'/world/{world}/dynamic_pose/info', '-n', '1'],
+                             capture_output=True, text=True, timeout=15)
+    except subprocess.TimeoutExpired:
+        return None
+    return drive.parse_model_pose(out.stdout, model)
 
 
 class Driver:
@@ -204,11 +239,16 @@ class Driver:
         for name in names:
             gz_service(self.args.world, 'remove', 'gz.msgs.Entity', f'name: "{name}", type: MODEL')
 
-    def drive(self, run):
-        """One NavigateToPose from the run's start (the robot is already there) to its goal."""
+    def true_error(self, pose):
+        xy = gz_model_xy(self.args.world, self.args.robot)
+        return '' if xy is None else round(math.dist(xy, (pose.x, pose.y)), 3)
+
+    def drive(self, run, tree):
+        """One NavigateToPose from the run's start (the robot is already there) to its goal, with BT ``tree``."""
         from action_msgs.msg import GoalStatus
         import rclpy
         goal = self.NavigateToPose.Goal()
+        goal.behavior_tree = tree
         goal.pose.header.frame_id = self.frame_id
         goal.pose.pose.position.x, goal.pose.pose.position.y = run.goal.x, run.goal.y
         q = goal.pose.pose.orientation
@@ -242,7 +282,8 @@ class Driver:
             'planned_distance': round(self.plans[0], 4) if self.plans else '',
             'last_plan_distance': round(self.plans[-1], 4) if self.plans else '', 'plan_count': len(self.plans),
             'recoveries': self.recoveries,
-            'final_error': round(drive.relative_pose_error(start, odom_start, self.odom, (run.goal.x, run.goal.y)), 3)}
+            'final_error': round(drive.relative_pose_error(start, odom_start, self.odom, (run.goal.x, run.goal.y)), 3),
+            'true_final_error': self.true_error(run.goal)}
 
 
 def main(argv=None):
@@ -262,7 +303,8 @@ def main(argv=None):
     from rclpy.parameter import Parameter
     rclpy.init()
     node = rclpy.create_node('path_planner_drive', parameter_overrides=[Parameter('use_sim_time', value=True)])
-    rows, aborted = [], ''
+    rows, aborted, algorithms = [], '', []
+    tree_dir = tempfile.mkdtemp(prefix='path_planner_bt_')
     try:
         d = Driver(node, args, scenarios.frame_id)
         if not d.client.wait_for_server(timeout_sec=args.server_timeout):
@@ -277,28 +319,43 @@ def main(argv=None):
         controller_id = d.get_param('controller_server', 'FollowPath.plugin')
         if not str(planner_plugin).startswith('nav2_navfn_planner'):
             raise SystemExit(f'{args.planner} is {planner_plugin}, not NavFn')
-        algorithms = [('astar', True), ('dijkstra', False)]
-        print(f'{exp_id}: {len(runs)} runs x 2 planners x {args.repeat} on {versions["map_version"]}', flush=True)
+        # (label, planner plugin id, use_astar for NavFn or None)
+        algorithms = [('astar', args.planner, True), ('dijkstra', args.planner, False)]
+        loaded = list(d.get_param('planner_server', 'planner_plugins'))
+        if args.smac in loaded:
+            smac_plugin = d.get_param('planner_server', f'{args.smac}.plugin')
+            if smac_plugin not in core.OTHER_PLUGINS:
+                raise SystemExit(f'{args.smac} is {smac_plugin}, not a known extra candidate')
+            algorithms.append((core.OTHER_PLUGINS[smac_plugin], args.smac, None))
+        if args.algorithms:
+            algorithms = [a for a in algorithms if a[0] in args.algorithms.split(',')]
+        trees = planner_trees(sorted({a[1] for a in algorithms}), tree_dir)
+        print(f'{exp_id}: {len(runs)} runs x {len(algorithms)} planners x {args.repeat} on '
+              f'{versions["map_version"]}', flush=True)
         for k in range(args.repeat):
-            ordered = algorithms if k % 2 == 0 else algorithms[::-1]
+            shift = k % len(algorithms)                   # rotate so every planner takes every position in turn
+            ordered = algorithms[shift:] + algorithms[:shift]
             for run in runs:
-                for order, (algorithm, use_astar) in enumerate(ordered, 1):
+                for order, (algorithm, planner_id, use_astar) in enumerate(ordered, 1):
                     boxes = []
                     try:
-                        d.set_algorithm(use_astar)
+                        if use_astar is not None:
+                            d.set_algorithm(use_astar)
                         d.place_robot(run.start)
+                        start_error = d.true_error(run.start)
                         if run.map_variant:
                             boxes = d.spawn_boxes(run.obstacles)
                         d.localize(run.start)
                         d.clear_costmaps()
-                        out = d.drive(run)
+                        out = d.drive(run, trees[planner_id])
+                        out['true_start_error'] = start_error
                     finally:
                         d.remove_boxes(boxes)
                     row = {f: '' for f in drive.DRIVE_FIELDS}
                     row.update(out)
                     row.update({
                         'experiment_id': exp_id, 'scenario_id': run.run_id, 'run_mode': args.run_mode,
-                        'algorithm': algorithm, 'planner_id': args.planner, 'controller_id': controller_id,
+                        'algorithm': algorithm, 'planner_id': planner_id, 'controller_id': controller_id,
                         'map_version': versions['map_version'], 'config_version': versions['config_version'],
                         'scenario_set': scenarios.name, 'scenario_version': versions['scenario_version'],
                         'pair_id': run.pair_id, 'direction': run.direction, 'map_variant': run.map_variant,
@@ -308,10 +365,11 @@ def main(argv=None):
                         'goal_x': run.goal.x, 'goal_y': run.goal.y, 'goal_yaw_deg': run.goal.yaw_deg,
                         'stamp': core.utc_stamp()})
                     rows.append(row)
-                    print(f"[{len(rows)}/{len(runs) * 2 * args.repeat}] rep {k + 1} {run.run_id} {algorithm}: "
+                    print(f"[{len(rows)}/{len(runs) * len(algorithms) * args.repeat}] rep {k + 1} {run.run_id} {algorithm}: "
                           f"{'arrived' if out['goal_success'] else out['failure_reason']} "
                           f"{out.get('execution_time')} s, {out.get('actual_distance')} m, "
-                          f"first plan {out.get('planned_distance')} m, recoveries {out.get('recoveries')}", flush=True)
+                          f"first plan {out.get('planned_distance')} m, recoveries {out.get('recoveries')}, "
+                          f"true error {out.get('true_final_error')} m", flush=True)
     except (RuntimeError, KeyboardInterrupt) as e:      # keep what was measured and say why it stopped
         aborted = f'{type(e).__name__}: {e}'
         print(f'ABORTED: {aborted}', flush=True)
@@ -326,15 +384,18 @@ def main(argv=None):
     meta = {
         'experiment_id': exp_id, 'run_mode': args.run_mode, 'note': args.note, **versions,
         'started': core.utc_stamp(started), 'finished': core.utc_stamp(), 'repeat': args.repeat,
-        'trials': len(rows), 'planned_trials': len(runs) * 2 * args.repeat, 'aborted': aborted,
+        'trials': len(rows), 'planned_trials': len(runs) * len(algorithms) * args.repeat, 'aborted': aborted,
+        'algorithms': [{'algorithm': a, 'planner_id': p, 'use_astar': u} for a, p, u in algorithms],
         'runs': [r.run_id for r in runs], 'timeout_s': args.timeout, 'world': args.world,
         'scenario_file': os.path.relpath(scenarios.path, BENCH_DIR).replace(os.sep, '/'),
         'params_file': os.path.relpath(os.path.abspath(args.params), BENCH_DIR).replace(os.sep, '/'),
         'map_file': os.path.relpath(scenarios.map_yaml, BENCH_DIR).replace(os.sep, '/'),
         'loaded_map': loaded_map, 'planner_id': args.planner, 'planner_plugin': planner_plugin,
         'controller_id': controller_id,
-        'procedure': 'per trial: set use_astar and read it back, set_pose to the start, spawn boxes (blocked runs), '
-                     'initialpose until AMCL is on the start, clear both costmaps, NavigateToPose',
+        'procedure': 'per trial: set use_astar and read it back (NavFn), set_pose to the start, spawn boxes (blocked '
+                     'runs), initialpose until AMCL is on the start, clear both costmaps, NavigateToPose with the '
+                     'default BT whose ComputePathToPose planner_id is fixed to the planner of the trial',
+        'true_pose': 'true_start_error / true_final_error: distance from the Gazebo model pose to the start / goal',
         'env': {'ros_distro': os.environ.get('ROS_DISTRO'), 'nav2_bringup': package_version('nav2_bringup'),
                 'nav2_navfn_planner': package_version('nav2_navfn_planner'),
                 'turtlebot3_gazebo': package_version('turtlebot3_gazebo'), 'gz_sim': gz[0] if gz else None,

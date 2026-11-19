@@ -14,7 +14,8 @@ import sys
 from xml.sax.saxutils import escape
 
 SURFACE, INK, MUTED, GRID = '#fcfcfb', '#0b0b0b', '#52514e', '#e4e3df'
-SERIES = [('astar', '#eb6834', 'NavFn A*'), ('dijkstra', '#2a78d6', 'NavFn Dijkstra')]   # same pair as plot_paths
+# same colours as plot_paths; a planner that is not in the result is left out
+SERIES = [('astar', '#eb6834', 'NavFn A*'), ('dijkstra', '#2a78d6', 'NavFn Dijkstra'), ('smac2d', '#1baf7a', 'Smac 2D')]
 LABEL_W, PLOT_W, RIGHT, BAR_H, GAP, GROUP_GAP, TOP = 190, 470, 150, 11, 2, 12, 66
 # (file stem, value column, spread column, title, unit, note)
 PLANNER_CHARTS = [
@@ -42,11 +43,12 @@ def fmt(value):
 
 def render_chart(title, subtitle, unit, note, groups):
     """SVG text. ``groups``: [(label, {algorithm: (value, spread or None) or None})] in display order."""
+    series = [s for s in SERIES if any(s[0] in d for _, d in groups)]
     values = [v[0] + (v[1] or 0.0) for _, d in groups for v in d.values() if v]
     top = max(values) if values else 1.0
     step = nice_step(top)
     axis_max = step * (int(top / step) + 1)
-    group_h = len(SERIES) * BAR_H + (len(SERIES) - 1) * GAP
+    group_h = len(series) * BAR_H + (len(series) - 1) * GAP
     height = TOP + len(groups) * (group_h + GROUP_GAP) + 46
     width = LABEL_W + PLOT_W + RIGHT
 
@@ -59,7 +61,7 @@ def render_chart(title, subtitle, unit, note, groups):
          f'<text x="12" y="20" font-size="15" font-weight="600" fill="{INK}">{escape(title)} ({unit})</text>',
          f'<text x="12" y="37" font-size="11.5" fill="{MUTED}">{escape(subtitle)}</text>']
     lx = 12
-    for _, color, label in SERIES:                                  # legend row
+    for _, color, label in series:                                  # legend row
         o.append(f'<rect x="{lx}" y="46" width="14" height="8" rx="2" fill="{color}"/>')
         o.append(f'<text x="{lx + 19}" y="54" font-size="11.5" fill="{INK}">{label}</text>')
         lx += 30 + 7 * len(label)
@@ -74,9 +76,9 @@ def render_chart(title, subtitle, unit, note, groups):
     for label, data in groups:
         o.append(f'<text x="{LABEL_W - 8}" y="{y + group_h / 2 + 4}" font-size="11.5" fill="{INK}" '
                  f'text-anchor="end">{escape(label)}</text>')
-        present = [data[a][0] for a, _, _ in SERIES if data.get(a)]
-        differs = len(present) == 2 and min(present) > 0 and max(present) / min(present) >= 1.05
-        for i, (alg, color, name) in enumerate(SERIES):
+        present = [data[a][0] for a, _, _ in series if data.get(a)]
+        differs = len(present) >= 2 and min(present) > 0 and max(present) / min(present) >= 1.05
+        for i, (alg, color, name) in enumerate(series):
             by = y + i * (BAR_H + GAP)
             v = data.get(alg)
             if not v:
@@ -96,7 +98,7 @@ def render_chart(title, subtitle, unit, note, groups):
                 o.append(f'<text x="{end + 5}" y="{by + BAR_H - 1.5}" font-size="10.5" fill="{INK}">{fmt(value)}</text>')
         y += group_h + GROUP_GAP
     o.append(f'<text x="12" y="{height - 10}" font-size="10.5" fill="{MUTED}">{escape(note)}. '
-             f'숫자는 두 값이 5% 이상 다른 실행에만 적었다.</text>')
+             f'숫자는 값이 5% 이상 벌어진 실행에만 적었다.</text>')
     o.append('</svg>')
     return '\n'.join(o) + '\n'
 

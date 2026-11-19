@@ -115,7 +115,7 @@ def test_drive_params_differ_from_the_bench_only_where_documented():
     with open(os.path.join(BENCH_DIR, 'config', 'navfn_compare.yaml'), encoding='utf-8') as f:
         bench = yaml.safe_load(f)
     planner = nav['planner_server']['ros__parameters']
-    assert planner['planner_plugins'] == ['GridBased']
+    assert planner['planner_plugins'][0] == 'GridBased'
     assert planner['GridBased']['plugin'] == 'nav2_navfn_planner::NavfnPlanner'
     ref = bench['planner_server']['ros__parameters']['NavFnDijkstra']
     assert {k: planner['GridBased'][k] for k in ('tolerance', 'allow_unknown')} == \
