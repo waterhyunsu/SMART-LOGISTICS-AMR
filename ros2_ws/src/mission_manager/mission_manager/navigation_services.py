@@ -59,6 +59,7 @@ class NavigationServices:
         self.timer = manager.create_timer(
             min(0.05, self.timeout), self._poll, clock=Clock(clock_type=ClockType.STEADY_TIME))
         self._dispatch = None
+        self._refused_before_send = None
         self._lookup = None
         self.last_report = None
 
@@ -71,6 +72,7 @@ class NavigationServices:
             return False
 
         def send(ticket):
+            self._refused_before_send = None
             request = DispatchGoal.Request(**_execution_context(ticket.goal, ticket.nav_goal_id))
             future = self.dispatch_client.call_async(request)
             self._dispatch = _Dispatch(ticket, future, monotonic() + self.timeout)
@@ -125,9 +127,14 @@ class NavigationServices:
             active.receipt = None
             response = _response(receipt)
             if (response is None or response.attempt_id != active.ticket.goal.attempt_id
-                    or response.nav_goal_id != active.ticket.nav_goal_id
-                    or response.result not in (DispatchGoal.Response.RESULT_ACCEPTED,
-                                               DispatchGoal.Response.RESULT_DUPLICATE)
+                    or response.nav_goal_id != active.ticket.nav_goal_id):
+                self._hold_dispatch(active)
+                return
+            if (response.result == DispatchGoal.Response.RESULT_NOT_READY
+                    and response.goal_state == DispatchGoal.Response.STATE_NONE and not active.accepted):
+                self._refused_before_send = active.ticket
+            if (response.result not in (DispatchGoal.Response.RESULT_ACCEPTED,
+                                        DispatchGoal.Response.RESULT_DUPLICATE)
                     or response.goal_state == DispatchGoal.Response.STATE_UNCERTAIN):
                 self._hold_dispatch(active)
 
@@ -185,7 +192,14 @@ class NavigationServices:
                 observations = {getattr(LookupGoal.Response, f'OBS_{value.name}'): value
                                 for value in NavigationObservation}
                 observation = observations.get(response.observation, NavigationObservation.UNKNOWN)
-                self._record_lookup(lookup, observation, response.no_pending_dispatch)
+                no_pending_dispatch = response.no_pending_dispatch
+                if response.observation == LookupGoal.Response.OBS_REFUSED_BEFORE_SEND:
+                    # An inspection alone cannot replace the original dispatch receipt.
+                    ticket = DispatchTicket(self.manager.current_goal(), lookup.nav_goal_id)
+                    no_pending_dispatch = no_pending_dispatch and self._refused_before_send == ticket
+                    if no_pending_dispatch:
+                        observation = NavigationObservation.NO_ACTIVE_GOAL
+                self._record_lookup(lookup, observation, no_pending_dispatch)
             else:
                 self._record_lookup(lookup, NavigationObservation.UNKNOWN)
 

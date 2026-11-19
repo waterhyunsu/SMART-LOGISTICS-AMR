@@ -194,7 +194,8 @@ def test_d_exits_after_acceptance(tmp_path, monkeypatch):
         assert adapter.approve_retry(lookup, explicitly_approved=True) is None
 
 
-def test_retry_after_not_ready_then_nav2_start(tmp_path, monkeypatch):
+@pytest.mark.parametrize('drop_receipt', [False, True], ids=['confirmed-refusal', 'lost-receipt'])
+def test_retry_after_not_ready_then_nav2_start(tmp_path, monkeypatch, drop_receipt):
     monkeypatch.setenv('ROS_AUTOMATIC_DISCOVERY_RANGE', 'LOCALHOST')
     namespace = '/gate1_' + uuid4().hex
     with ExitStack() as stack, manager(tmp_path / 'mission.sqlite', namespace) as (node, executor):
@@ -204,13 +205,32 @@ def test_retry_after_not_ready_then_nav2_start(tmp_path, monkeypatch):
         node.state.add_steps(job('one'))
         assert node.state.apply(mock_optimizer(node.state.request('HOME', 'r1')))
         goal = node.claim_next_goal()
-        assert adapter.dispatch(goal)
+        sent_requests = []
+        call_async = adapter.dispatch_client.call_async
+
+        def send_request(request):
+            sent_requests.append(request)
+            future = call_async(request)
+            if drop_receipt:
+                # Send on DDS but discard its response, without affecting D's handler.
+                adapter.dispatch_client.remove_pending_request(future)
+            return future
+
+        with monkeypatch.context() as patch:
+            patch.setattr(adapter.dispatch_client, 'call_async', send_request)
+            assert adapter.dispatch(goal)
         until(executor, lambda: node.state.recovery_required)
         original_id = node.state.nav_goal_id
         assert original_id
         d_dispatch = next(line for line in d_log.read_text().splitlines()
                           if '[dispatch_goal]' in line and original_id in line)
         assert '→ NOT_READY' in d_dispatch and '누적 Nav2 송신 0회' in d_dispatch
+
+        early_lookup = adapter.lookup()
+        assert early_lookup is not None
+        until(executor, lambda: adapter.last_report is not None)
+        assert adapter.last_report.observation is NavigationObservation.UNKNOWN
+        assert adapter.approve_retry(early_lookup, explicitly_approved=True) is None
 
         _, nav_log = run_process(stack, tmp_path, namespace, 'server', ['delay_sec:=0.2'])
         action = ActionClient(node, NavigateToPose, 'navigate_to_pose')
@@ -225,11 +245,23 @@ def test_retry_after_not_ready_then_nav2_start(tmp_path, monkeypatch):
         assert not adapter.dispatch(goal)
         assert '[GOAL]' not in nav_log.read_text()
 
+        # D must remember the refusal and block replay even after Nav2 starts.
+        duplicate = call_async(sent_requests[0])
+        until(executor, duplicate.done)
+        assert duplicate.result().result == DispatchGoal.Response.RESULT_DUPLICATE
+        assert '[GOAL]' not in nav_log.read_text()
+
         retry = adapter.approve_retry(lookup, explicitly_approved=True)
-        if retry is None and adapter.last_report.observation is NavigationObservation.UNKNOWN:
-            pytest.xfail('PR #14: D does not record the NOT_READY refusal for recovery lookup')
+        if drop_receipt:
+            assert adapter.last_report.observation is NavigationObservation.UNKNOWN
+            assert not adapter.last_report.no_pending_dispatch
+            assert retry is None
+            assert node.state.recovery_required and node.state.nav_goal_id == original_id
+            return
+
         assert retry is not None, 'confirmed refusal should allow an explicit retry after Nav2 starts'
         assert retry.attempt_id != goal.attempt_id
+        assert adapter.approve_retry(lookup, explicitly_approved=True) is None
         assert '[GOAL]' not in nav_log.read_text()
         assert adapter.dispatch(retry)
         assert node.state.nav_goal_id != original_id
