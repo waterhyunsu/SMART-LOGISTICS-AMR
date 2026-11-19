@@ -28,6 +28,12 @@
 | [`scripts/run_compare.py`](scripts/run_compare.py) | `ComputePathToPose`(`start` + `use_start: true`, `planner_id`)로 같은 쌍을 두 설정에서 반복 실행하고 결과를 기록 |
 | [`scripts/bench_core.py`](scripts/bench_core.py) | ROS 없는 핵심 로직: 시나리오·설정 검증, 버전 해시, 경로 길이, 시행 반복, CSV/JSON 기록 |
 | [`scripts/plot_paths.py`](scripts/plot_paths.py) | 결과 폴더의 경로를 지도 위에 그린다. 실행마다 SVG 한 장에 두 플래너를 겹쳐 그리고, ROS와 그래프 라이브러리가 필요 없다 |
+| [`scripts/plot_compare.py`](scripts/plot_compare.py) | 결과 폴더의 요약을 막대그래프(SVG)로 그린다. 계획 결과는 경로 길이·계획 시간, 주행 결과는 주행 시간·주행 거리 |
+| [`scripts/run_drive.py`](scripts/run_drive.py), [`scripts/drive_core.py`](scripts/drive_core.py) | **주행 비교 [초안-팀합의필요]**: Gazebo에서 같은 쌍을 두 설정으로 주행시켜 주행 시간·실제 주행 거리·도착 여부·복구 횟수를 기록한다 |
+| [`scripts/run_drive_sim.sh`](scripts/run_drive_sim.sh), [`launch/drive_bench.launch.py`](launch/drive_bench.launch.py) | 주행 비교용 스택(Gazebo Harmonic + TurtleBot3 Waffle Pi + Nav2)을 띄우고 측정한 뒤 종료한다 |
+| [`config/nav2_drive.yaml`](config/nav2_drive.yaml) | 주행 비교용 Nav2 설정. ROBOTIS `turtlebot3_navigation2` 2.3.7의 Waffle Pi 설정에서 바꾼 곳을 파일 머리말에 적었다. D의 배포 설정이 아니다 |
+| [`sim/worlds/lecture_hall_real.sdf`](sim/worlds/lecture_hall_real.sdf), [`scripts/make_sim_world.py`](scripts/make_sim_world.py) | legacy 강의실 월드(Gazebo Classic)를 Harmonic용으로 바꾼 월드와 변환 스크립트. 모델은 그대로이고 머리말만 바꿨다 |
+| [`docker/Dockerfile.sim`](docker/Dockerfile.sim) | 주행 비교 실행 환경: 위 이미지에 Gazebo Harmonic(`ros_gz`)·Nav2 전체·`turtlebot3_gazebo`를 더한 것 |
 | [`scripts/run_planner_only.sh`](scripts/run_planner_only.sh) | 런치 → 비교 → 종료를 한 번에 실행. DDS 탐색 범위 기본값은 `LOCALHOST` |
 | [`docker/Dockerfile`](docker/Dockerfile) | ROS 2 Jazzy + Nav2 planner-only 실행 환경 |
 | `tests/` | MOCK 테스트 |
@@ -82,6 +88,34 @@ python3 experiments/path_planner/scripts/plot_paths.py experiments/path_planner/
 ```
 
 결과 폴더에 `paths_<실행>.svg`를 쓴다. `paths.json`이 있는 결과(2026-11-19 `39fba81` 이후 측정)에서만 쓸 수 있다.
+
+### 비교 그래프
+
+```bash
+python3 experiments/path_planner/scripts/plot_compare.py experiments/path_planner/results/<실험 ID>
+```
+
+결과 폴더에 `compare_*.svg`를 쓴다. 계획 결과와 주행 결과 모두에 쓸 수 있다.
+
+### 주행 비교 (Gazebo Harmonic) — [초안-팀합의필요] B의 임시 환경
+
+D의 Nav2 실행 환경과 공식 지도가 나오기 전에 쓰는 임시 환경이다. controller(DWB)·AMCL·BT 설정은 ROBOTIS 기본값이며 D의 배포 설정이 아니다.
+검증한 환경은 Windows 11 + WSL2(WSLg, GPU 가속) + Docker 하나뿐이다. LiDAR를 렌더링하므로 화면이나 GPU가 필요하다.
+
+```bash
+docker build -t amr-sim:jazzy -f experiments/path_planner/docker/Dockerfile.sim experiments/path_planner/docker
+# WSLg 예: 화면과 GPU 를 컨테이너에 넘긴다
+docker run --rm --network none -e DISPLAY -e WAYLAND_DISPLAY -e XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir \
+  -v /tmp/.X11-unix:/tmp/.X11-unix -v /mnt/wslg:/mnt/wslg --device /dev/dxg -v /usr/lib/wsl:/usr/lib/wsl:ro \
+  -e LD_LIBRARY_PATH=/usr/lib/wsl/lib -e GALLIUM_DRIVER=d3d12 -v "$PWD":/repo amr-sim:jazzy bash -c '
+  source /opt/ros/jazzy/setup.bash &&
+  bash experiments/path_planner/scripts/run_drive_sim.sh experiments/path_planner/scenarios/lecture_hall_v1.yaml \
+    --run-mode SIM --repeat 5 --only R1-A,R1-B,R1-C --git-commit <측정한 코드 커밋>'
+```
+
+- 시행마다 `GridBased.use_astar`를 바꾸고 다시 읽어 확인한다. 그다음 로봇을 출발 Pose에 놓고, AMCL을 그 자리로 다시 초기화하고, 두 costmap을 지운 뒤 `NavigateToPose`를 보낸다.
+- 차단 실행(`:blocked`)은 상자를 **월드에만** 놓는다. 지도에는 없으므로 로봇이 가다가 LiDAR로 발견하고 재계획한다.
+- `SIM_GUI=1`을 주면 Gazebo 창도 띄운다.
 
 ### MOCK 테스트
 

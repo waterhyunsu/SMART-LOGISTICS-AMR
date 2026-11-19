@@ -53,12 +53,22 @@ def yaw_of(q):
     return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
-def gz_service(world, name, reqtype, req):
-    out = subprocess.run(['gz', 'service', '-s', f'/world/{world}/{name}', '--reqtype', reqtype, '--reptype',
-                          'gz.msgs.Boolean', '--timeout', '5000', '--req', req],
-                         capture_output=True, text=True, timeout=20)
-    if 'data: true' not in out.stdout:
-        raise RuntimeError(f'gz service {name} failed: {out.stdout.strip()} {out.stderr.strip()}')
+def gz_service(world, name, reqtype, req, attempts=4):
+    """Call a Gazebo world service; a call that times out is tried again (set_pose and remove are idempotent)."""
+    last = ''
+    for _ in range(attempts):
+        try:
+            out = subprocess.run(['gz', 'service', '-s', f'/world/{world}/{name}', '--reqtype', reqtype, '--reptype',
+                                  'gz.msgs.Boolean', '--timeout', '5000', '--req', req],
+                                 capture_output=True, text=True, timeout=20)
+        except subprocess.TimeoutExpired:
+            last = 'gz service did not return'
+            continue
+        if 'data: true' in out.stdout:
+            return
+        last = (out.stdout.strip() + ' ' + out.stderr.strip())[-200:]
+        time.sleep(1.0)
+    raise RuntimeError(f'gz service {name} failed {attempts} times: {last}')
 
 
 class Driver:
