@@ -310,10 +310,15 @@ def main(argv=None):
             switcher = MapSwitcher(node, scenarios, work_dir, args.load_map_service, args.costmap_topic,
                                    args.server_timeout)
             extra = {'set_map': switcher, 'variant_map_versions': switcher.versions}
+        # path quality is measured against the map each run was planned on (blocked copies include their boxes)
+        map_files = switcher.paths if switcher is not None else {'': scenarios.map_yaml}
+        fields = {variant: core.clearance_field(path) for variant, path in map_files.items()}
+        path_store = core.PathStore()
         print(f'{exp_id}: {len(scenarios.runs)} runs x {len(configs)} planners x ({args.warmup} warmup + '
               f'{args.repeat}) on {versions["map_version"]}, {versions["config_version"]}', flush=True)
         rows = core.run_trials(scenarios, configs, planner, repeat=args.repeat, warmup=args.warmup,
-                               run_mode=args.run_mode, experiment_id=exp_id, **versions, **extra)
+                               run_mode=args.run_mode, experiment_id=exp_id, clearance_fields=fields,
+                               path_store=path_store, **versions, **extra)
         if switcher is not None:
             try:      # leave map_server as the launch file started it; the measured rows are already complete
                 switcher('')
@@ -334,13 +339,16 @@ def main(argv=None):
         'map_file': os.path.relpath(scenarios.map_yaml, BENCH_DIR).replace(os.sep, '/'),
         'frame_id': scenarios.frame_id, 'loaded_map': loaded_map, 'planner_server_params': server_params,
         'map_variants': switcher.records if switcher is not None else {},
+        'path_metrics': {'clearance': 'm from path poses (robot centre) to the nearest occupied map cell, cell-based',
+                         'turn_sum_deg': 'sum of |heading change| on the path resampled every 0.10 m',
+                         'paths_file': 'paths.json: first measured successful path per run and planner'},
         'planners': [{'planner_id': c.planner_id, 'algorithm': c.algorithm, 'params': c.params} for c in configs],
         'request': {'action': args.action, 'use_start': True},
         'env': {'ros_distro': os.environ.get('ROS_DISTRO'), 'nav2_planner': package_version('nav2_planner'),
                 'nav2_navfn_planner': package_version('nav2_navfn_planner'),
                 'bench_env': os.environ.get('BENCH_ENV'), 'python': platform.python_version(),
                 'platform': platform.platform(), 'cpu_count': os.cpu_count(), 'git_commit': git_commit(args.git_commit)}}
-    out = core.write_results(os.path.join(args.out, exp_id), rows, summary, meta)
+    out = core.write_results(os.path.join(args.out, exp_id), rows, summary, meta, paths=path_store.as_list())
     print(core.render_summary_md(summary, meta))
     missed = [s['scenario_id'] + '/' + s['planner_id'] for s in summary if s['expectation_met'] != s['trials']]
     if missed:

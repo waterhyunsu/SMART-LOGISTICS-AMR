@@ -32,17 +32,20 @@ EXPERIMENT_RESULT_FIELDS = [
 # Columns added later go at the end so existing column positions never move (C/E may read these files).
 # map_variant: '' on the scenario map, the pair id on the map with that pair's obstacles drawn in.
 # obstacle_hits: path poses inside one of the pair's obstacles (only for pairs with obstacles and a returned path).
+# min_clearance / mean_clearance: m from the path poses (robot centre) to the nearest occupied map cell.
+# turn_sum_deg: sum of |heading change| along the path resampled every 0.10 m (0 = straight, ~90 per corner).
 EXTRA_FIELDS = [
     'scenario_set', 'scenario_version', 'pair_id', 'direction', 'repetition', 'order', 'warmup', 'plan_success',
     'expected', 'expectation_met', 'error_code', 'error_name', 'error_msg', 'roundtrip_time', 'num_poses',
     'path_end_error', 'start_x', 'start_y', 'start_yaw_deg', 'goal_x', 'goal_y', 'goal_yaw_deg', 'stamp',
-    'map_variant', 'obstacle_hits']
+    'map_variant', 'obstacle_hits', 'min_clearance', 'mean_clearance', 'turn_sum_deg']
 TRIAL_FIELDS = EXPERIMENT_RESULT_FIELDS + EXTRA_FIELDS
 SUMMARY_FIELDS = [
     'scenario_id', 'pair_id', 'direction', 'expected', 'planner_id', 'algorithm', 'trials', 'plan_successes',
     'success_rate', 'expectation_met', 'planned_distance_mean', 'planned_distance_std', 'planned_distance_min',
     'planned_distance_max', 'planning_time_median', 'planning_time_max', 'roundtrip_time_median',
-    'failure_reasons', 'map_variant', 'obstacle_crossings']
+    'failure_reasons', 'map_variant', 'obstacle_crossings', 'min_clearance_min', 'mean_clearance_mean',
+    'turn_sum_deg_mean']
 
 
 @dataclass(frozen=True)
@@ -349,6 +352,118 @@ def obstacle_hits(points, boxes):
     return sum(1 for x, y in points if any(b.contains(x, y) for b in boxes))
 
 
+_FAR = 1e20
+
+
+def _edt_1d(f):
+    """Squared distance transform of one row/column (Felzenszwalb & Huttenlocher), in cells squared."""
+    n = len(f)
+    d, v, z = [0.0] * n, [0] * n, [0.0] * (n + 1)
+    k = 0
+    z[0], z[1] = -_FAR, _FAR
+    for q in range(1, n):
+        while True:
+            p = v[k]
+            s = ((f[q] + q * q) - (f[p] + p * p)) / (2.0 * (q - p))
+            if s > z[k]:
+                break
+            k -= 1
+        k += 1
+        v[k], z[k], z[k + 1] = q, s, _FAR
+    k = 0
+    for q in range(n):
+        while z[k + 1] < q:
+            k += 1
+        d[q] = (q - v[k]) ** 2 + f[v[k]]
+    return d
+
+
+@dataclass(frozen=True)
+class ClearanceField:
+    """Distance (m) from every map cell centre to the nearest occupied cell centre. Rows count from the bottom."""
+    width: int
+    height: int
+    resolution: float
+    origin: tuple
+    dist: tuple
+
+    def at(self, x, y):
+        i = math.floor((x - self.origin[0]) / self.resolution)
+        j = math.floor((y - self.origin[1]) / self.resolution)
+        if not (0 <= i < self.width and 0 <= j < self.height):
+            return None
+        return self.dist[j * self.width + i]
+
+
+def clearance_field(map_yaml):
+    """ClearanceField of a map file. Occupied = cells map_server marks occupied (occupancy > occupied_thresh).
+
+    Unknown cells are not obstacles (same rule as legacy_r1). Returns None for a map without occupied cells.
+    The value is cell-based, so it is accurate to about one cell (the map resolution).
+    """
+    doc = _load_yaml(map_yaml)
+    width, height, maxval, pixels = read_pgm_p5(map_image_path(map_yaml))
+    negate, thresh = int(doc.get('negate', 0)), float(doc.get('occupied_thresh', 0.65))
+    grid = []
+    for j in range(height):                       # j = 0 is the bottom row = last image row
+        row = pixels[(height - 1 - j) * width:(height - j) * width]
+        grid.append([0.0 if (v if negate else maxval - v) / maxval > thresh else _FAR for v in row])
+    if not any(v == 0.0 for row in grid for v in row):
+        return None
+    cols = [_edt_1d([grid[j][i] for j in range(height)]) for i in range(width)]
+    dist = []
+    for j in range(height):
+        dist.extend(math.sqrt(d) * float(doc['resolution']) for d in _edt_1d([cols[i][j] for i in range(width)]))
+    return ClearanceField(width, height, float(doc['resolution']), (float(doc['origin'][0]), float(doc['origin'][1])),
+                          tuple(dist))
+
+
+def path_clearance(field, points):
+    """(min, mean) clearance in m over the path points inside the map; (None, None) without a field or points."""
+    values = [v for v in (field.at(x, y) for x, y in points) if v is not None] if field is not None else []
+    return (min(values), sum(values) / len(values)) if values else (None, None)
+
+
+def turn_total(points, step=0.10):
+    """Sum of |heading change| in degrees along the path resampled every ``step`` m (same rule as legacy_r1)."""
+    if len(points) < 3:
+        return 0.0
+    keep = [points[0]]
+    for p in points[1:]:
+        if math.dist(p, keep[-1]) >= step:
+            keep.append(p)
+    headings = [math.atan2(b[1] - a[1], b[0] - a[0]) for a, b in zip(keep, keep[1:])]
+    total = sum(abs((b - a + math.pi) % (2 * math.pi) - math.pi) for a, b in zip(headings, headings[1:]))
+    return math.degrees(total)
+
+
+class PathStore:
+    """Keeps the path of the first measured successful trial of every (run, planner) and counts identical ones."""
+
+    def __init__(self):
+        self.items = {}
+
+    def add(self, row, poses):
+        if row['warmup'] or not row['plan_success']:
+            return
+        rounded = [[round(x, 4), round(y, 4)] for x, y in poses]
+        digest = hashlib.sha256(json.dumps(rounded).encode()).hexdigest()[:12]
+        key = (row['scenario_id'], row['planner_id'])
+        item = self.items.get(key)
+        if item is None:
+            self.items[key] = {
+                'scenario_id': row['scenario_id'], 'planner_id': row['planner_id'], 'algorithm': row['algorithm'],
+                'map_variant': row['map_variant'], 'repetition': row['repetition'],
+                'planned_distance': row['planned_distance'], 'path_digest': digest, 'successful_trials': 1,
+                'identical_trials': 1, 'poses': rounded}
+        else:
+            item['successful_trials'] += 1
+            item['identical_trials'] += int(digest == item['path_digest'])
+
+    def as_list(self):
+        return list(self.items.values())
+
+
 def map_info(map_yaml):
     """Expected map metadata, compared with what map_server actually publishes."""
     doc = _load_yaml(map_yaml)
@@ -396,7 +511,8 @@ def _call(plan_fn, planner_id, start, goal):
 
 
 def run_trials(scenarios, planners, plan_fn, *, repeat, warmup, run_mode, experiment_id, config_version,
-               map_version, scenario_version='', clock=utc_stamp, set_map=None, variant_map_versions=None):
+               map_version, scenario_version='', clock=utc_stamp, set_map=None, variant_map_versions=None,
+               clearance_fields=None, path_store=None):
     """Run every scenario run with every planner, ``warmup`` + ``repeat`` times.
 
     Both planners get the identical start/goal back to back; their order alternates per repetition so neither
@@ -406,6 +522,9 @@ def run_trials(scenarios, planners, plan_fn, *, repeat, warmup, run_mode, experi
     variant. ``set_map(variant)`` ('' = scenario map) is called before each of these groups and must raise when it
     cannot confirm the switch, so no trial is recorded on the wrong map. ``variant_map_versions`` gives the
     map_version of every variant.
+
+    ``clearance_fields`` ({variant: ClearanceField}, '' = scenario map) fills the clearance columns; without it
+    they stay empty. ``path_store`` (PathStore) collects one path per (run, planner) for plotting.
     """
     if run_mode not in RUN_MODES:
         raise ValueError(f'run_mode must be one of {RUN_MODES}')
@@ -434,13 +553,17 @@ def run_trials(scenarios, planners, plan_fn, *, repeat, warmup, run_mode, experi
                     rows.append(_trial_row(
                         run, cfg, order, k, warmup, out, experiment_id=experiment_id, run_mode=run_mode,
                         config_version=config_version, map_version=versions[variant], scenario_set=scenarios.name,
-                        scenario_version=scenario_version, stamp=clock()))
+                        scenario_version=scenario_version, stamp=clock(),
+                        field=(clearance_fields or {}).get(variant)))
+                    if path_store is not None:
+                        path_store.add(rows[-1], out.poses)
     return rows
 
 
 def _trial_row(run, cfg, order, k, warmup, out, *, experiment_id, run_mode, config_version, map_version,
-               scenario_set, scenario_version, stamp):
+               scenario_set, scenario_version, stamp, field=None):
     ok = bool(out.success and out.poses)
+    min_clear, mean_clear = path_clearance(field, out.poses) if ok else (None, None)
     if ok:
         reason = ''
     elif out.success:
@@ -462,6 +585,8 @@ def _trial_row(run, cfg, order, k, warmup, out, *, experiment_id, run_mode, conf
         'error_msg': out.error_msg, 'roundtrip_time': _round(out.roundtrip_ms, 3),
         'num_poses': len(out.poses), 'path_end_error': _round(end_error(out.poses, run.goal), 4),
         'obstacle_hits': obstacle_hits(out.poses, run.obstacles) if ok and run.obstacles else '',
+        'min_clearance': _round(min_clear, 4), 'mean_clearance': _round(mean_clear, 4),
+        'turn_sum_deg': round(turn_total(out.poses), 1) if ok else '',
         'start_x': run.start.x, 'start_y': run.start.y, 'start_yaw_deg': run.start.yaw_deg,
         'goal_x': run.goal.x, 'goal_y': run.goal.y, 'goal_yaw_deg': run.goal.yaw_deg, 'stamp': stamp}
 
@@ -490,6 +615,11 @@ def summarize(rows):
             'success_rate': round(100.0 * ok / len(rs), 1),
             'expectation_met': sum(1 for r in rs if r['expectation_met']),
             'obstacle_crossings': sum(1 for h in hits if h > 0) if hits else '',
+            'min_clearance_min': _stats([r['min_clearance'] for r in rs if r['min_clearance'] != ''], min),
+            'mean_clearance_mean': _stats([r['mean_clearance'] for r in rs if r['mean_clearance'] != ''],
+                                          statistics.fmean),
+            'turn_sum_deg_mean': _stats([r['turn_sum_deg'] for r in rs if r['turn_sum_deg'] != ''],
+                                        statistics.fmean),
             'planned_distance_mean': _stats(dist, statistics.fmean),
             'planned_distance_std': _stats(dist, statistics.pstdev),
             'planned_distance_min': _stats(dist, min), 'planned_distance_max': _stats(dist, max),
@@ -511,19 +641,23 @@ def render_summary_md(summary, meta):
         f"scenario_version: `{meta['scenario_version']}`",
         f"- repeat {meta['repeat']} (+ warmup {meta['warmup']}, excluded) / ROS {meta['env'].get('ros_distro')}"
         f" / nav2_planner {meta['env'].get('nav2_planner')}",
-        '- planned_distance 는 계획 경로 길이(m)이며 실제 주행 거리가 아니다. planning_time 은 planner_server 가 보고한 값(ms).']
+        '- planned_distance 는 계획 경로 길이(m)이며 실제 주행 거리가 아니다. planning_time 은 planner_server 가 보고한 값(ms).',
+        '- 장애물 거리는 경로 점(로봇 중심)에서 가장 가까운 점유 칸까지의 거리(m, 칸 단위 정확도)다. '
+        '꺾인 각도 합은 경로를 0.10 m 간격으로 다시 찍어 더한 방향 변화(도)다.']
     for variant, info in (meta.get('map_variants') or {}).items():
         lines.append(f"- 차단 지도 `{variant}` (`:blocked` 실행): `{info['map_version']}`, 상자 {info['obstacles']}")
     lines += [
         '',
-        '| 실행 | 기대 | 플래너 | 성공 | 기대 일치 | 상자 자리 통과 | 경로 길이 평균 (m) | 표준편차 | 계획 시간 중앙값 (ms) | 최대 | 왕복 중앙값 (ms) | 실패 사유 |',
-        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
+        '| 실행 | 기대 | 플래너 | 성공 | 기대 일치 | 상자 자리 통과 | 경로 길이 평균 (m) | 표준편차 | 최소 장애물 거리 (m) '
+        '| 평균 장애물 거리 (m) | 꺾인 각도 합 (도) | 계획 시간 중앙값 (ms) | 최대 | 왕복 중앙값 (ms) | 실패 사유 |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     for s in summary:
         crossings = '-' if s['obstacle_crossings'] == '' else f"{s['obstacle_crossings']}/{s['plan_successes']}"
         lines.append(
             f"| {s['scenario_id']} | {s['expected']} | {s['planner_id']} ({s['algorithm']}) "
             f"| {s['plan_successes']}/{s['trials']} | {s['expectation_met']}/{s['trials']} | {crossings} "
             f"| {_cell(s['planned_distance_mean'])} | {_cell(s['planned_distance_std'])} "
+            f"| {_cell(s['min_clearance_min'])} | {_cell(s['mean_clearance_mean'])} | {_cell(s['turn_sum_deg_mean'])} "
             f"| {_cell(s['planning_time_median'])} | {_cell(s['planning_time_max'])} "
             f"| {_cell(s['roundtrip_time_median'])} | {s['failure_reasons'] or '-'} |")
     return '\n'.join(lines) + '\n'
@@ -536,8 +670,8 @@ def _write_csv(path, fields, rows):
         writer.writerows(rows)
 
 
-def write_results(out_dir, rows, summary, meta):
-    """Write trials.csv, summary.csv, summary.md and meta.json into a new directory (never overwrites)."""
+def write_results(out_dir, rows, summary, meta, paths=None):
+    """Write trials.csv, summary.csv, summary.md, meta.json (and paths.json) into a new directory (no overwrite)."""
     os.makedirs(out_dir, exist_ok=False)
     _write_csv(os.path.join(out_dir, 'trials.csv'), TRIAL_FIELDS, rows)
     _write_csv(os.path.join(out_dir, 'summary.csv'), SUMMARY_FIELDS, summary)
@@ -546,4 +680,9 @@ def write_results(out_dir, rows, summary, meta):
     with open(os.path.join(out_dir, 'meta.json'), 'w', encoding='utf-8') as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
         f.write('\n')
+    if paths is not None:
+        with open(os.path.join(out_dir, 'paths.json'), 'w', encoding='utf-8') as f:
+            json.dump({'experiment_id': meta['experiment_id'], 'paths': paths}, f, ensure_ascii=False,
+                      separators=(',', ':'))
+            f.write('\n')
     return out_dir
