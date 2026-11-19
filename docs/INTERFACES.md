@@ -324,7 +324,7 @@ Mission 상태, TaskStep 상태, Navigation 상태는 동일한 상태 열거형
 
 **[확정]** E는 사용자 조작마다 고유한 `event_id`를 발급하고 `mission_id`, `step_id`와 함께 전달한다. 재전송 시 세 값을 유지한다. A는 미션별 이벤트 원장에서 같은 이벤트·단계의 최초 결과(`accepted` 또는 `rejected`)를 재사용한다. 같은 키를 다른 단계에 쓰면 `conflict`를 반환한다. 새 이벤트도 현재 인계 대기 단계에만 적용한다. 거부 후 실제로 다시 확인한 조작은 새 이벤트다.
 
-**확정된 계약 / Phase 1 영속 처리 미구현.** E는 발신 이벤트를 기록한 뒤 전송하고 A의 결과를 받아 표시한다. 타임아웃은 결과 미확인 상태다. A가 처리한 직후 응답이 유실되거나 E의 DB 기록이 실패하면 같은 키로 재조회·재전송한다. A는 ACK 전에 상태 전이와 처리 결과를 함께 복구 가능하게 저장해야 한다. E의 기록만으로 미션 상태를 확정할 수 없다. 복구 완료 시험은 처리 직전·직후 재시작과 응답 유실을 주입해 완료 전이 1회 및 동일 결과 복원을 확인한다. Phase 0 MOCK의 원장은 메모리에만 있다.
+**확정된 계약 / A의 영속 처리 MOCK 검증 완료.** E는 발신 이벤트를 기록한 뒤 전송하고 A의 결과를 받아 표시한다. 타임아웃은 결과 미확인 상태다. A가 처리한 직후 응답이 유실되거나 E의 DB 기록이 실패하면 같은 키로 재조회·재전송한다. A는 ACK 전에 상태 전이와 처리 결과를 함께 복구 가능하게 저장해야 한다. E의 기록만으로 미션 상태를 확정할 수 없다. 복구 완료 시험은 처리 직전·직후 재시작과 응답 유실을 주입해 완료 전이 1회 및 동일 결과 복원을 확인한다. A는 `database_path`에 파일을 지정하면 SQLite로 원장을 복구한다. 기본 `:memory:`는 프로세스 내 테스트용이다. 웹 전송 및 E와의 실제 ACK 복구 통합은 검증 대기다. [A 실행 안내](../ros2_ws/src/mission_manager/README.md)
 
 ---
 
@@ -380,7 +380,7 @@ A는 다음 사항을 확인한다.
 
 ### 6.4. A↔C 서비스와 적용 규칙
 
-**[확정]** A는 `logistics_msgs/srv/OptimizeRoute`의 클라이언트, C는 서버다. 기본 상대 서비스명은 `optimize_route`이며 ROS 네임스페이스로 배치한다. [서비스 선언](../ros2_ws/src/logistics_msgs/srv/OptimizeRoute.srv)과 [단계 선언](../ros2_ws/src/logistics_msgs/msg/TaskStep.msg)이 필드 및 직렬화 타입의 기준이다. DDS 서버·클라이언트 통합은 모듈 통합(Phase 2) 검증 대상이다.
+**[확정]** A는 `logistics_msgs/srv/OptimizeRoute`의 클라이언트, C는 서버다. 기본 상대 서비스명은 `optimize_route`이며 ROS 네임스페이스로 배치한다. [서비스 선언](../ros2_ws/src/logistics_msgs/srv/OptimizeRoute.srv)과 [단계 선언](../ros2_ws/src/logistics_msgs/msg/TaskStep.msg)이 필드 및 직렬화 타입의 기준이다. A 클라이언트와 C 테스트 대역의 DDS 왕복은 검증했다. C 실제 서버와의 연동은 통합 검증 대상이다.
 
 - Job은 주문, TaskStep은 주문의 수거·전달 단계, Waypoint는 물리적 위치다. 여러 단계가 한 지점을 공유할 수 있다. `step_id`는 미션 안에서 고유하다. A는 등록 입력과 요청 메시지를 복사하고 중복 단계, 미등록 선행 단계, 자기 참조·순환, 같은 Job의 수거를 선행 조건에서 누락한 전달을 거부한다.
 - A는 미션 인스턴스별로 증가하는 `request_id`와 현재 활성 버전 `base_version`을 보낸다. 복구 시 같은 미션 ID를 재사용하려면 발급 번호와 활성 버전을 복원해야 한다. 요청에는 현재 단계 ID, 완료 ID, 신규 주문을 포함한 전체 대기 단계, 출발 Waypoint, 비용표 버전이 있다. 현재 작업 중이면 그 작업의 도착 지점이 출발점이다.
@@ -437,6 +437,8 @@ D는 목표 도달 성공 여부를 반환하며, 물품 인계 완료까지 결
 `FollowWaypoints`는 검토할 수 있으나 초기 물류 작업에서는 지점 도착과 인계 확인을 분리해야 하므로 `NavigateToPose` 기반 실행을 우선한다.
 
 별도의 Navigation Adapter가 필요한 경우에도 기존 Nav2 기능을 중복 구현하지 않는다.
+
+A의 Python 경계, UUID·시도 대응 및 별도 프로세스 검증 계획은 [A↔D 인수인계](INTEGRATION_A_D_HANDOFF.md)를 참고한다.
 
 ### 7.4. 주행 취소 및 실패
 
@@ -737,8 +739,8 @@ SIM과 REAL의 통신 및 실행 환경이 혼합되지 않도록 별도 검증�
 - [ ] 실제 Topic·Service·Action 이름
 - [x] Phase 0 TaskStep 및 OptimizeRoute 생성 타입
 - [x] OptimizeRoute 필드명·자료형
-- [ ] Job·Mission 상태의 영속 저장 및 재시작 복구 방식
-- [ ] 재시작 후 활성 버전 복원 구현
+- [x] A의 SQLite 파일 기반 Job·Mission 상태 및 활성 버전 복원 (MOCK)
+- [ ] 실제 A↔D 실행 상태·A↔E ACK 복구 검증
 - [x] 미션과 이벤트 ID 기반 중복 처리
 - [ ] 비용표 저장 형식 및 갱신 통지 구현
 - [ ] ROS2 QoS와 상태 갱신 주기

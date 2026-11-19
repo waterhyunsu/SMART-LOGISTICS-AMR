@@ -455,13 +455,13 @@ Priority P1·Priority P2 기능 때문에 Priority P0 전체 미션 개발을 �
 | P-003 | E↔ROS2 연결 방식 | PENDING | A·E | A |
 | P-004 | 공통 `.msg`·`.srv` 정의 및 필드 | 승인 (ADR-015) | A, 관련 담당 | A |
 | P-005 | OptimizeRoute 외 런타임 이름 및 QoS | PENDING | 관련 담당 | A |
-| P-006 | 계획 식별·활성 버전의 영속 저장 구현 | PENDING | A·C | A |
+| P-006 | 계획 식별·활성 버전의 영속 저장 구현 | A SQLite 복원 검증 (MOCK) | A·C | A |
 | P-007 | 물품 인계 완료 요청의 중복 방지 방식 | 승인 (ADR-015) | A·E | A |
 | P-008 | 비용표 저장 형식 및 갱신 통지 구현 | PENDING | B·C·D | A |
 | P-009 | 전역 플래너 최종 선정 | VERIFY | B·D | A |
 | P-010 | 방문 순서 알고리즘 최종 선정 | VERIFY | C | A |
 | P-011 | 로컬 Controller 최종 선정 | VERIFY | D | A |
-| P-012 | 웹·ROS2 서비스 재시작 시 미션 복구 | PENDING | A·E | A |
+| P-012 | 웹·ROS2 서비스 재시작 시 미션 복구 | A SQLite 복구 검증 (MOCK), 실제 웹 연동 대기 | A·E | A |
 | P-013 | 실차 안전 정지·재개 세부 절차 | VERIFY | C·D | A |
 | P-014 | HOME·A~D 실제 Pose 및 지도 기준 | VERIFY | C·D | A |
 | P-015 | 요청 타임아웃·재시도·취소 정책 | PENDING | A·C·D | A |
