@@ -1,0 +1,51 @@
+{
+  "experiment_id": "20261119T044830Z_SIM_lecture_hall_v1_r1d_drive",
+  "run_mode": "SIM",
+  "note": "Gazebo Harmonic drive: Docker amr-sim:jazzy on WSL2 (GPU D3D12), TurtleBot3 Waffle Pi, Nav2 AMCL + NavFn + DWB, B temporary environment",
+  "config_version": "nav2_drive@ccfbbd427b1e",
+  "map_version": "lecture_hall_real@4995e81c1fb1",
+  "scenario_version": "lecture_hall_v1_r1d@a663bec775cf",
+  "started": "2026-11-19T04:48:30.160Z",
+  "finished": "2026-11-19T06:00:19.914Z",
+  "repeat": 5,
+  "trials": 40,
+  "planned_trials": 40,
+  "aborted": "",
+  "runs": [
+    "R1-D1:fwd",
+    "R1-D1:rev",
+    "R1-D1:fwd:blocked",
+    "R1-D1:rev:blocked"
+  ],
+  "timeout_s": 180.0,
+  "world": "lecture_hall_real",
+  "scenario_file": "scenarios/lecture_hall_v1_r1d.yaml",
+  "params_file": "config/nav2_drive.yaml",
+  "map_file": "legacy_r1/experiments/r1/maps/lecture_hall_real.yaml",
+  "loaded_map": {
+    "width": 190,
+    "height": 213,
+    "resolution": 0.05,
+    "origin": [
+      -2.45,
+      -1.05
+    ],
+    "frame_id": "map"
+  },
+  "planner_id": "GridBased",
+  "planner_plugin": "nav2_navfn_planner::NavfnPlanner",
+  "controller_id": "dwb_core::DWBLocalPlanner",
+  "procedure": "per trial: set use_astar and read it back, set_pose to the start, spawn boxes (blocked runs), initialpose until AMCL is on the start, clear both costmaps, NavigateToPose",
+  "env": {
+    "ros_distro": "jazzy",
+    "nav2_bringup": "1.3.14",
+    "nav2_navfn_planner": "1.3.14",
+    "turtlebot3_gazebo": "2.3.7",
+    "gz_sim": "8.15.0",
+    "bench_env": "docker:amr-sim:jazzy",
+    "python": "3.12.3",
+    "platform": "Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "cpu_count": 8,
+    "git_commit": "b4f4ca0396df6d5f309fa31f88f25debc28ee7f3"
+  }
+}

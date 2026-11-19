@@ -1,7 +1,10 @@
-# Local trial image (this PC only, not in the team repo): ROS 2 Jazzy + Gazebo Harmonic (ros_gz) + Nav2 + TurtleBot3.
-# Purpose: check whether Gazebo runs under WSL2/WSLg on this PC. The planner bench image is separate and unchanged.
+# Driving comparison environment for experiments/path_planner — [초안-팀합의필요] B's temporary environment.
+# ROS 2 Jazzy (Ubuntu 24.04) + Gazebo Harmonic (ros_gz) + Nav2 + TurtleBot3 simulation models.
+# The planner-only image (Dockerfile) is separate and unchanged.
 #
-#   docker build -t amr-sim:jazzy /mnt/d/teamfinal/claude_tools/sim
+#   docker build -t amr-sim:jazzy -f experiments/path_planner/docker/Dockerfile.sim experiments/path_planner/docker
+#
+# The simulated LiDAR is rendered, so the container needs a display or GPU (see experiments/path_planner/README.md).
 FROM ros:jazzy-ros-base
 
 RUN apt-get update \
@@ -17,6 +20,7 @@ RUN apt-get update \
         python3-yaml \
     && rm -rf /var/lib/apt/lists/*
 
+ENV BENCH_ENV=docker:amr-sim:jazzy
 ENV TURTLEBOT3_MODEL=waffle_pi
 ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 WORKDIR /repo

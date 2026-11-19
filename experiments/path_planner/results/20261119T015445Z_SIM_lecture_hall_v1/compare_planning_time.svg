@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 810 328" width="810" height="328" font-family="sans-serif" role="img" aria-label="계획 시간 (중앙값)">
+<rect width="810" height="328" fill="#fcfcfb"/>
+<text x="12" y="20" font-size="15" font-weight="600" fill="#0b0b0b">계획 시간 (중앙값) (ms)</text>
+<text x="12" y="37" font-size="11.5" fill="#52514e">20261119T015445Z_SIM_lecture_hall_v1 · SIM · lecture_hall_real@4995e81c1fb1</text>
+<rect x="12" y="46" width="14" height="8" rx="2" fill="#eb6834"/>
+<text x="31" y="54" font-size="11.5" fill="#0b0b0b">NavFn A*</text>
+<rect x="98" y="46" width="14" height="8" rx="2" fill="#2a78d6"/>
+<text x="117" y="54" font-size="11.5" fill="#0b0b0b">NavFn Dijkstra</text>
+<line x1="190.0" y1="62" x2="190.0" y2="274" stroke="#e4e3df" stroke-width="1"/>
+<text x="190.0" y="288" font-size="10.5" fill="#52514e" text-anchor="middle">0</text>
+<line x1="268.3" y1="62" x2="268.3" y2="274" stroke="#e4e3df" stroke-width="1"/>
+<text x="268.3" y="288" font-size="10.5" fill="#52514e" text-anchor="middle">0.2</text>
+<line x1="346.7" y1="62" x2="346.7" y2="274" stroke="#e4e3df" stroke-width="1"/>
+<text x="346.7" y="288" font-size="10.5" fill="#52514e" text-anchor="middle">0.4</text>
+<line x1="425.0" y1="62" x2="425.0" y2="274" stroke="#e4e3df" stroke-width="1"/>
+<text x="425.0" y="288" font-size="10.5" fill="#52514e" text-anchor="middle">0.6</text>
+<line x1="503.3" y1="62" x2="503.3" y2="274" stroke="#e4e3df" stroke-width="1"/>
+<text x="503.3" y="288" font-size="10.5" fill="#52514e" text-anchor="middle">0.8</text>
+<line x1="581.7" y1="62" x2="581.7" y2="274" stroke="#e4e3df" stroke-width="1"/>
+<text x="581.7" y="288" font-size="10.5" fill="#52514e" text-anchor="middle">1</text>
+<line x1="660.0" y1="62" x2="660.0" y2="274" stroke="#e4e3df" stroke-width="1"/>
+<text x="660.0" y="288" font-size="10.5" fill="#52514e" text-anchor="middle">1.2</text>
+<text x="182" y="82.0" font-size="11.5" fill="#0b0b0b" text-anchor="end">R1-A:fwd</text>
+<path d="M190 66h147.4a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-147.4z" fill="#eb6834"><title>R1-A:fwd NavFn A*: 0.384 ms</title></path>
+<text x="345.4" y="75.5" font-size="10.5" fill="#0b0b0b">0.384</text>
+<path d="M190 79h224.4a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-224.4z" fill="#2a78d6"><title>R1-A:fwd NavFn Dijkstra: 0.581 ms</title></path>
+<text x="422.4" y="88.5" font-size="10.5" fill="#0b0b0b">0.581</text>
+<text x="182" y="118.0" font-size="11.5" fill="#0b0b0b" text-anchor="end">R1-A:rev</text>
+<path d="M190 102h137.0a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-137.0z" fill="#eb6834"><title>R1-A:rev NavFn A*: 0.357 ms</title></path>
+<text x="335.0" y="111.5" font-size="10.5" fill="#0b0b0b">0.357</text>
+<path d="M190 115h209.9a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-209.9z" fill="#2a78d6"><title>R1-A:rev NavFn Dijkstra: 0.543 ms</title></path>
+<text x="407.9" y="124.5" font-size="10.5" fill="#0b0b0b">0.543</text>
+<text x="182" y="154.0" font-size="11.5" fill="#0b0b0b" text-anchor="end">R1-B:fwd</text>
+<path d="M190 138h191.5a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-191.5z" fill="#eb6834"><title>R1-B:fwd NavFn A*: 0.496 ms</title></path>
+<text x="389.5" y="147.5" font-size="10.5" fill="#0b0b0b">0.496</text>
+<path d="M190 151h245.3a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-245.3z" fill="#2a78d6"><title>R1-B:fwd NavFn Dijkstra: 0.634 ms</title></path>
+<text x="443.3" y="160.5" font-size="10.5" fill="#0b0b0b">0.634</text>
+<text x="182" y="190.0" font-size="11.5" fill="#0b0b0b" text-anchor="end">R1-B:rev</text>
+<path d="M190 174h373.8a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-373.8z" fill="#eb6834"><title>R1-B:rev NavFn A*: 0.962 ms</title></path>
+<text x="571.8" y="183.5" font-size="10.5" fill="#0b0b0b">0.962</text>
+<path d="M190 187h313.5a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-313.5z" fill="#2a78d6"><title>R1-B:rev NavFn Dijkstra: 0.808 ms</title></path>
+<text x="511.5" y="196.5" font-size="10.5" fill="#0b0b0b">0.808</text>
+<text x="182" y="226.0" font-size="11.5" fill="#0b0b0b" text-anchor="end">R1-C:fwd</text>
+<path d="M190 210h438.0a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-438.0z" fill="#eb6834"><title>R1-C:fwd NavFn A*: 1.126 ms</title></path>
+<text x="636.0" y="219.5" font-size="10.5" fill="#0b0b0b">1.126</text>
+<path d="M190 223h380.0a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-380.0z" fill="#2a78d6"><title>R1-C:fwd NavFn Dijkstra: 0.978 ms</title></path>
+<text x="578.0" y="232.5" font-size="10.5" fill="#0b0b0b">0.978</text>
+<text x="182" y="262.0" font-size="11.5" fill="#0b0b0b" text-anchor="end">R1-C:rev</text>
+<path d="M190 246h377.9a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-377.9z" fill="#eb6834"><title>R1-C:rev NavFn A*: 0.973 ms</title></path>
+<text x="575.9" y="255.5" font-size="10.5" fill="#0b0b0b">0.973</text>
+<path d="M190 259h346.8a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-346.8z" fill="#2a78d6"><title>R1-C:rev NavFn Dijkstra: 0.893 ms</title></path>
+<text x="544.8" y="268.5" font-size="10.5" fill="#0b0b0b">0.893</text>
+<text x="12" y="318" font-size="10.5" fill="#52514e">planner_server 가 보고한 값. 실행 환경에 따라 달라지므로 같은 실험 안에서만 비교한다. 숫자는 두 값이 5% 이상 다른 실행에만 적었다.</text>
+</svg>

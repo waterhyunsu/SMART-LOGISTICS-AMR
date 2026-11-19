@@ -1,0 +1,9 @@
+scenario_id,pair_id,direction,map_variant,expected,algorithm,trials,goal_successes,success_rate,expectation_met,execution_time_mean,execution_time_std,execution_time_min,execution_time_max,actual_distance_mean,actual_distance_std,planned_distance_mean,recoveries_mean,recoveries_max,final_error_max,failure_reasons
+R1-D1:fwd,R1-D1,fwd,,success,astar,5,5,100.0,5,22.98,0.11,22.78,23.1,6.521,0.044,6.761,0.0,0.0,0.093,
+R1-D1:fwd,R1-D1,fwd,,success,dijkstra,5,5,100.0,5,22.8,0.06,22.7,22.87,6.482,0.03,6.656,0.0,0.0,0.094,
+R1-D1:rev,R1-D1,rev,,success,astar,5,5,100.0,5,43.67,9.96,31.31,53.69,6.846,0.082,6.603,1.4,3.0,1.136,
+R1-D1:rev,R1-D1,rev,,success,dijkstra,5,5,100.0,5,36.53,7.24,31.48,50.76,6.753,0.057,6.576,0.6,3.0,1.083,
+R1-D1:fwd:blocked,R1-D1,fwd,R1-D1,success,astar,5,4,80.0,4,75.01,24.58,52.11,114.22,13.192,1.059,6.721,11.6,19.0,1.556,NAV_STATUS_6_CODE_104
+R1-D1:fwd:blocked,R1-D1,fwd,R1-D1,success,dijkstra,5,5,100.0,5,69.48,31.19,51.67,131.65,13.527,1.936,6.664,2.6,7.0,0.742,
+R1-D1:rev:blocked,R1-D1,rev,R1-D1,success,astar,5,4,80.0,4,60.53,8.33,52.75,74.47,12.598,0.284,6.617,4.8,15.0,2.868,TIMEOUT
+R1-D1:rev:blocked,R1-D1,rev,R1-D1,success,dijkstra,5,5,100.0,5,64.51,16.74,54.25,97.65,12.887,0.48,6.585,2.4,10.0,2.462,

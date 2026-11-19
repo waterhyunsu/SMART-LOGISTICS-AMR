@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 810 256" width="810" height="256" font-family="sans-serif" role="img" aria-label="실제 주행 거리 (평균 ± 표준편차)">
+<rect width="810" height="256" fill="#fcfcfb"/>
+<text x="12" y="20" font-size="15" font-weight="600" fill="#0b0b0b">실제 주행 거리 (평균 ± 표준편차) (m)</text>
+<text x="12" y="37" font-size="11.5" fill="#52514e">20261119T044830Z_SIM_lecture_hall_v1_r1d_drive · SIM · lecture_hall_real@4995e81c1fb1</text>
+<rect x="12" y="46" width="14" height="8" rx="2" fill="#eb6834"/>
+<text x="31" y="54" font-size="11.5" fill="#0b0b0b">NavFn A*</text>
+<rect x="98" y="46" width="14" height="8" rx="2" fill="#2a78d6"/>
+<text x="117" y="54" font-size="11.5" fill="#0b0b0b">NavFn Dijkstra</text>
+<line x1="190.0" y1="62" x2="190.0" y2="202" stroke="#e4e3df" stroke-width="1"/>
+<text x="190.0" y="216" font-size="10.5" fill="#52514e" text-anchor="middle">0</text>
+<line x1="307.5" y1="62" x2="307.5" y2="202" stroke="#e4e3df" stroke-width="1"/>
+<text x="307.5" y="216" font-size="10.5" fill="#52514e" text-anchor="middle">5</text>
+<line x1="425.0" y1="62" x2="425.0" y2="202" stroke="#e4e3df" stroke-width="1"/>
+<text x="425.0" y="216" font-size="10.5" fill="#52514e" text-anchor="middle">10</text>
+<line x1="542.5" y1="62" x2="542.5" y2="202" stroke="#e4e3df" stroke-width="1"/>
+<text x="542.5" y="216" font-size="10.5" fill="#52514e" text-anchor="middle">15</text>
+<line x1="660.0" y1="62" x2="660.0" y2="202" stroke="#e4e3df" stroke-width="1"/>
+<text x="660.0" y="216" font-size="10.5" fill="#52514e" text-anchor="middle">20</text>
+<text x="182" y="82.0" font-size="11.5" fill="#0b0b0b" text-anchor="end">R1-D1:fwd</text>
+<path d="M190 66h150.2a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-150.2z" fill="#eb6834"><title>R1-D1:fwd NavFn A*: 6.521 m</title></path>
+<line x1="342.2" y1="71.5" x2="344.3" y2="71.5" stroke="#0b0b0b" stroke-width="1.2"/>
+<path d="M190 79h149.3a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-149.3z" fill="#2a78d6"><title>R1-D1:fwd NavFn Dijkstra: 6.482 m</title></path>
+<line x1="341.6" y1="84.5" x2="343.0" y2="84.5" stroke="#0b0b0b" stroke-width="1.2"/>
+<text x="182" y="118.0" font-size="11.5" fill="#0b0b0b" text-anchor="end">R1-D1:rev</text>
+<path d="M190 102h157.9a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-157.9z" fill="#eb6834"><title>R1-D1:rev NavFn A*: 6.846 m</title></path>
+<line x1="349.0" y1="107.5" x2="352.8" y2="107.5" stroke="#0b0b0b" stroke-width="1.2"/>
+<path d="M190 115h155.7a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-155.7z" fill="#2a78d6"><title>R1-D1:rev NavFn Dijkstra: 6.753 m</title></path>
+<line x1="347.4" y1="120.5" x2="350.0" y2="120.5" stroke="#0b0b0b" stroke-width="1.2"/>
+<text x="182" y="154.0" font-size="11.5" fill="#0b0b0b" text-anchor="end">R1-D1:fwd:blocked</text>
+<path d="M190 138h307.0a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-307.0z" fill="#eb6834"><title>R1-D1:fwd:blocked NavFn A*: 13.19 m</title></path>
+<line x1="475.1" y1="143.5" x2="524.9" y2="143.5" stroke="#0b0b0b" stroke-width="1.2"/>
+<path d="M190 151h314.9a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-314.9z" fill="#2a78d6"><title>R1-D1:fwd:blocked NavFn Dijkstra: 13.53 m</title></path>
+<line x1="462.4" y1="156.5" x2="553.4" y2="156.5" stroke="#0b0b0b" stroke-width="1.2"/>
+<text x="182" y="190.0" font-size="11.5" fill="#0b0b0b" text-anchor="end">R1-D1:rev:blocked</text>
+<path d="M190 174h293.1a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-293.1z" fill="#eb6834"><title>R1-D1:rev:blocked NavFn A*: 12.6 m</title></path>
+<line x1="479.4" y1="179.5" x2="492.7" y2="179.5" stroke="#0b0b0b" stroke-width="1.2"/>
+<path d="M190 187h299.8a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h-299.8z" fill="#2a78d6"><title>R1-D1:rev:blocked NavFn Dijkstra: 12.89 m</title></path>
+<line x1="481.6" y1="192.5" x2="504.1" y2="192.5" stroke="#0b0b0b" stroke-width="1.2"/>
+<text x="12" y="246" font-size="10.5" fill="#52514e">바퀴 오도메트리 경로 길이. 도착한 시행만. 숫자는 두 값이 5% 이상 다른 실행에만 적었다.</text>
+</svg>
