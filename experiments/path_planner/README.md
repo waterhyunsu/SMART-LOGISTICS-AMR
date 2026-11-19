@@ -8,8 +8,8 @@
 | 항목 | 상태 |
 | --- | --- |
 | B 가이드 첫 번째 기능: 재현 가능한 비교 조건 | 구현함. 고정 출발/목표 쌍, 실패 사례, 설정 쌍, 실행 스크립트, 결과 기록 |
-| MOCK | `tests/` 21개 통과 (가짜 플래너) |
-| SIM (planner-only) | Jazzy Docker에서 1회 측정: [`results/20261118T061956Z_SIM_lecture_hall_v1`](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md) |
+| MOCK | `tests/` 41개 통과 (가짜 플래너, 경로 차단 20개 포함) |
+| SIM (planner-only) | Jazzy Docker에서 측정: R1-A~C·도달 불가 [`results/20261118T061956Z_SIM_lecture_hall_v1`](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md), R1-D 경로 차단 [`results/20261119T012513Z_SIM_lecture_hall_v1_r1d`](results/20261119T012513Z_SIM_lecture_hall_v1_r1d/summary.md) |
 | SIM (Gazebo 주행) / REAL | 미측정 |
 | 지도 | **[초안-팀합의필요]** legacy 강의실 복제 맵을 임시로 사용. D의 공식 지도·HOME·A~D 지점(P-014) 확정 전 |
 | 전역 플래너 최종 선정 (P-009) | VERIFY. 이 결과만으로 선정하지 않는다 |
@@ -23,6 +23,7 @@
 | [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md) | 날짜순 실험 기록: 실험마다 목적, 바꾼 조건, 관찰, 문제와 원인 |
 | [`config/navfn_compare.yaml`](config/navfn_compare.yaml) | planner_server 하나에 NavFn 두 개(`NavFnAStar`, `NavFnDijkstra`). `use_astar`만 다르고 같은 global costmap을 쓴다 |
 | [`scenarios/lecture_hall_v1.yaml`](scenarios/lecture_hall_v1.yaml) | 고정 지점과 쌍: R1-A 개방, R1-B 장애물 우회, R1-C 좁은 통로(각각 정·역방향), FAIL-WALLED(벽으로 막힌 영역), FAIL-OFFMAP(지도 밖 목표) |
+| [`scenarios/lecture_hall_v1_r1d.yaml`](scenarios/lecture_hall_v1_r1d.yaml) | R1-D 경로 차단: R1-D1 복도 하나를 막아 우회 경로 재생성, R1-D2 복도 셋을 모두 막아 실패 처리(각각 정·역방향, 차단 전·후) |
 | [`launch/planner_bench.launch.py`](launch/planner_bench.launch.py) | planner-only 스택: map_server + planner_server + lifecycle_manager + 정적 TF `map → base_footprint` |
 | [`scripts/run_compare.py`](scripts/run_compare.py) | `ComputePathToPose`(`start` + `use_start: true`, `planner_id`)로 같은 쌍을 두 설정에서 반복 실행하고 결과를 기록 |
 | [`scripts/bench_core.py`](scripts/bench_core.py) | ROS 없는 핵심 로직: 시나리오·설정 검증, 버전 해시, 경로 길이, 시행 반복, CSV/JSON 기록 |
@@ -43,6 +44,7 @@
 | 순서 영향 | 반복마다 두 플래너의 실행 순서를 바꾼다 |
 | 반복 | 예열 1회(요약에서 제외, `warmup=True`로 기록) + 측정 N회 |
 | 기록 | 성공과 실패를 모두 기록한다. 실패는 Nav2 오류 이름(`NO_VALID_PATH` 등)으로 남기고 임의 거리로 대체하지 않는다 |
+| 경로 차단 (R1-D) | 시나리오 쌍의 `obstacles` 상자를 점유 칸으로 그린 지도 사본을 `map_server/load_map`으로 넣는다. global costmap에 상자 칸이 모두 lethal로 나타난 것을 확인한 뒤에만 잰다(확인하지 못하면 측정을 거부한다). 같은 쌍을 차단 전 지도와 차단 지도에서 모두 재고, 차단 지도는 `map_version`이 따로 붙는다(`<지도>+<쌍 ID>@<해시>`). 플래너 설정 파일은 바꾸지 않는다 |
 
 ## 실행 방법
 
@@ -112,6 +114,10 @@ python3 -m pytest experiments/path_planner/tests -q      # PyYAML, pytest 필요
 | `path_end_error` | m, 경로 마지막 Pose와 요청 목표 사이 거리 (NavFn `tolerance`로 목표 근처에서 끝난 경우 확인용) |
 | `plan_success` / `expectation_met` | 경로 생성 여부 / 시나리오 `expect`와 일치 여부 |
 | `config_version`, `map_version`, `scenario_version` | `<파일 이름>@<내용 SHA-256 앞 12자리>`. 텍스트 파일은 줄바꿈(CRLF/LF)을 정규화해서 해시한다. 설정·지도·시나리오가 바뀌면 값이 달라지므로 결과를 버전별로 나눌 수 있다 |
+| `map_variant` | 차단 지도에서 잰 행이면 쌍 ID(예: `R1-D1`), 시나리오 지도 그대로면 빈 값 |
+| `obstacle_hits` | 경로 Pose 중 그 쌍의 상자 안에 든 개수. 상자가 있는 쌍의 성공 경로에만 쓴다. 차단 전 경로가 0보다 크면 원래 경로가 상자 자리를 지났다는 뜻이다 |
+
+`map_variant`·`obstacle_hits`(`trials.csv`)와 `map_variant`·`obstacle_crossings`(`summary.csv`)는 R1-D와 함께 **맨 뒤에 추가한 열**이다. 앞쪽 열의 순서와 의미는 첫 측정 결과와 같다.
 
 ## 측정 결과 — SIM (planner-only)
 
@@ -144,6 +150,41 @@ Gazebo·AMCL·LiDAR는 쓰지 않았다. 예열 1회와 측정 30회.
 
 이 결과는 임시 지도 한 곳에서 계획만 비교한 것이다. 최종 플래너 선정(P-009)에는 공식 지도, Gazebo 주행 비교, 실차 검증(D 협업)이 더 필요하다.
 
+## 측정 결과 — R1-D 경로 차단, SIM (planner-only)
+
+실험 [`20261119T012513Z_SIM_lecture_hall_v1_r1d`](results/20261119T012513Z_SIM_lecture_hall_v1_r1d/summary.md).
+측정 코드 `a3c9822`, 설정 `navfn_compare@b6b5e3a1039a`(첫 측정과 같음), 시나리오 `lecture_hall_v1_r1d@a663bec775cf`.
+지도: 차단 전 `lecture_hall_real@4995e81c1fb1`, 차단 후 `lecture_hall_real+R1-D1@c254d94b7898`(복도 2 막음), `lecture_hall_real+R1-D2@07dc060afa8c`(복도 2·3·4 막음).
+환경은 첫 측정과 같다. 예열 1회 + 30회.
+
+| 실행 | 지도 | 기대 | 성공 A* / Dijkstra | 상자 자리 통과 A* / Dijkstra | 경로 길이 A* / Dijkstra (m) | 계획 시간 중앙값 A* / Dijkstra (ms) |
+| --- | --- | --- | --- | --- | --- | --- |
+| R1-D1:fwd 홈 → 복도 2 앞 | 차단 전 | success | 30/30 / 30/30 | 30/30 / 30/30 | 6.6997 / 6.6895 | 0.4375 / 0.481 |
+| R1-D1:fwd | 차단 후 | success | 30/30 / 30/30 | 0/30 / 0/30 | **12.0787** / 10.935 | 0.6395 / 0.832 |
+| R1-D1:rev | 차단 전 | success | 30/30 / 30/30 | 30/30 / 30/30 | 6.5818 / 6.5734 | 0.6455 / 0.87 |
+| R1-D1:rev | 차단 후 | success | 30/30 / 30/30 | 0/30 / 0/30 | 10.8343 / 10.8513 | 1.1405 / 0.861 |
+| R1-D2:fwd 홈 → 강단 오른쪽 | 차단 전 | success | 30/30 / 30/30 | 30/30 / 30/30 | 12.4477 / 12.4395 | 0.6875 / 1.263 |
+| R1-D2:fwd | 차단 후 | failure | 0/30 / 0/30 (`NO_VALID_PATH`) | - | - | 보고 안 됨 |
+| R1-D2:rev | 차단 전 | success | 30/30 / 30/30 | 30/30 / 30/30 | 12.2798 / 12.2415 | 1.2625 / 0.9985 |
+| R1-D2:rev | 차단 후 | failure | 0/30 / 0/30 (`NO_VALID_PATH`) | - | - | 보고 안 됨 |
+
+관찰한 사실 (이 지도·이 상자 배치에 한함):
+
+- 측정 480회가 모두 기대와 일치했다. 차단 전 경로는 모든 실행에서 상자 자리를 지났다(경로 Pose 12개가 상자 안). 상자가 원래 경로를 막는 위치였다는 뜻이다.
+- **경로 재생성 (R1-D1):** 차단 후 두 설정 모두 30/30 다른 세로 복도로 도는 경로를 만들었고, 상자 자리를 지나지 않았다.
+  - 정방향에서는 A* 경로가 Dijkstra보다 1.14 m(10.5%) 길었다. 차단 전보다 A*는 5.38 m, Dijkstra는 4.25 m 늘었다.
+  - 역방향에서는 A*가 0.017 m 짧았다. R1-C처럼 한 방향에서만 A*가 먼 길을 골랐다.
+- **실패 처리 (R1-D2):** 차단 후 두 설정 모두 0/30이었다. 오류는 `NO_VALID_PATH`(코드 208)였고 경로를 내지 않았다. 실패 응답에는 `planning_time`이 보고되지 않았다(첫 측정과 같음).
+- 30회 반복의 경로 길이 표준편차는 모두 0.0이었다. 세 번의 별도 실행(시험 실행, 이전 코드 측정, 이 측정)에서 경로 길이가 소수 넷째 자리까지 같았다.
+- 이전 Humble 연구의 R1-D1(정방향만, [`legacy_r1` §7.1](legacy_r1/experiments/r1/README.md))과 경향이 같다. Humble 값은 A* 12.565 ± 0.265 m, Dijkstra 10.942 m였다. Jazzy에서는 A* 길이도 반복마다 같았다.
+- 지도를 바꾼 뒤 costmap 반영을 확인하기까지 0.4~1.0 s 걸렸다.
+- `roundtrip_time`은 같은 실행 안에서 요청이 쌓일수록 커졌다(차단 전 묶음 반복 0 → 30: 14.3 → 23.5 ms). 첫 측정도 마찬가지였다(7.2 → 18.1 ms). 원인은 **[미분석]**이다.
+  실패 응답의 왕복 시간(약 15 ms)은 실행 순서의 영향을 받으므로 실패 판정 속도로 읽지 않는다. 알고리즘 비교에는 `planning_time`을 쓴다.
+
+이 실험은 **정적 지도에 상자를 그려 넣고 계획만 비교**한 것이다.
+NavFn은 요청마다 costmap 전체에서 새로 계산하므로 차단 후 계획이 곧 경로 재생성이다.
+주행 중에 상자를 언제 감지하고 BT가 언제 재계획하거나 포기하는지는 측정하지 않았다(Gazebo 주행 비교에서 D와 함께 본다).
+
 ## 다른 담당과 연동할 때
 
 - **D (Nav2):** `config/navfn_compare.yaml`의 NavFn 블록과 위 재현 명령을 공유한다. `amr_navigation` 배포 설정은 바꾸지 않았다.
@@ -151,11 +192,17 @@ Gazebo·AMCL·LiDAR는 쓰지 않았다. 예열 1회와 측정 30회.
 - **C (비용표):** 비용표를 만들 때는 `planner_id`와 `config_version`을 함께 기록하고, `start` + `use_start: true`로 방향별로 계산한다.
   `NO_VALID_PATH`·`GOAL_OUTSIDE_MAP`은 실패로 유지한다. 플래너가 확정되기 전까지 비용표의 플래너 기준은 임시다.
 - **E (기록·시각화):** `trials.csv`는 ExperimentResult 열을 앞에 두고 단위는 m·ms다. 예열 행은 `warmup=True`로 표시된다.
+  R1-D부터 맨 뒤에 `map_variant`·`obstacle_hits` 열이 붙는다. 열 위치가 아니라 열 이름으로 읽으면 이전 결과와 함께 쓸 수 있다.
+- **C (비용표):** 경로가 막힌 구간은 `NO_VALID_PATH` 실패로 온다(R1-D2). 비용표에서도 실패로 두고, 지도·장애물 조건이 바뀌면
+  `map_version`이 달라지므로 비용표를 다시 검증한다(INTERFACES §8.4).
+- **A·D (실패 처리):** planner-only에서는 막힌 경로가 계획 단계에서 바로 실패로 돌아온다. 주행 중 막힌 경우
+  BT의 재계획·복구가 언제 포기하는지는 이 실험 범위가 아니다(이전 Humble 주행에서는 경로가 없을 때 180 s 안에 실패를 알리지 않았다:
+  [`legacy_r1` §7.2](legacy_r1/experiments/r1/README.md)). Mission Manager의 시간 상한·진행 감시 정책을 정할 때 참고 자료로 공유한다.
 
 ## 다음 작업 후보
 
-1. D의 공식 지도와 HOME·A~D 지점이 나오면 `scenarios/<지도>_v1.yaml`을 추가하고, 방향별 쌍을 다시 측정한다.
-2. R1-D 경로 차단: 장애물을 추가한 지도 변형으로 재계획·실패 처리를 비교한다.
-3. D와 Gazebo Harmonic에서 주행 비교를 하고, 이어서 실차 검증(REAL)을 한다.
+1. D의 공식 지도와 HOME·A~D 지점이 나오면 `scenarios/<지도>_v1.yaml`을 추가하고, 방향별 쌍과 경로 차단을 다시 측정한다.
+2. 경로 품질 지표(장애물까지 최소 거리, 매끄러움)와 경로 그림을 추가한다. R1-C·R1-D1에서 A* 경로가 길어지는 원인 분석에 필요하다.
+3. D와 Gazebo Harmonic에서 주행 비교를 하고(차단 상자를 주행 중에 만나는 R1-D 포함), 이어서 실차 검증(REAL)을 한다.
 4. 팀원 환경(네이티브 Ubuntu 또는 Mac VM)에서 같은 명령을 실행해 경로 길이가 일치하는지 교차 확인한다.
 5. 결과를 모아 [`REPORT.md`](REPORT.md)를 채우고, P-009 선정 근거를 A에게 제출한다.

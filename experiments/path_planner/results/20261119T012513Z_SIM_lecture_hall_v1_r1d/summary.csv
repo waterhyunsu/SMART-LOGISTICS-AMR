@@ -1,0 +1,17 @@
+scenario_id,pair_id,direction,expected,planner_id,algorithm,trials,plan_successes,success_rate,expectation_met,planned_distance_mean,planned_distance_std,planned_distance_min,planned_distance_max,planning_time_median,planning_time_max,roundtrip_time_median,failure_reasons,map_variant,obstacle_crossings
+R1-D1:fwd,R1-D1,fwd,success,NavFnDijkstra,dijkstra,30,30,100.0,30,6.6895,0.0,6.6895,6.6895,0.481,0.645,12.8655,,,30
+R1-D1:fwd,R1-D1,fwd,success,NavFnAStar,astar,30,30,100.0,30,6.6997,0.0,6.6997,6.6997,0.4375,0.711,14.765,,,30
+R1-D1:rev,R1-D1,rev,success,NavFnDijkstra,dijkstra,30,30,100.0,30,6.5734,0.0,6.5734,6.5734,0.87,1.317,14.0015,,,30
+R1-D1:rev,R1-D1,rev,success,NavFnAStar,astar,30,30,100.0,30,6.5818,0.0,6.5818,6.5818,0.6455,1.359,14.1835,,,30
+R1-D2:fwd,R1-D2,fwd,success,NavFnDijkstra,dijkstra,30,30,100.0,30,12.4395,0.0,12.4395,12.4395,1.263,1.802,23.574,,,30
+R1-D2:fwd,R1-D2,fwd,success,NavFnAStar,astar,30,30,100.0,30,12.4477,0.0,12.4477,12.4477,0.6875,1.027,23.9525,,,30
+R1-D2:rev,R1-D2,rev,success,NavFnDijkstra,dijkstra,30,30,100.0,30,12.2415,0.0,12.2415,12.2415,0.9985,1.437,19.456,,,30
+R1-D2:rev,R1-D2,rev,success,NavFnAStar,astar,30,30,100.0,30,12.2798,0.0,12.2798,12.2798,1.2625,21.67,20.5535,,,30
+R1-D1:fwd:blocked,R1-D1,fwd,success,NavFnDijkstra,dijkstra,30,30,100.0,30,10.935,0.0,10.935,10.935,0.832,1.501,23.8815,,R1-D1,0
+R1-D1:fwd:blocked,R1-D1,fwd,success,NavFnAStar,astar,30,30,100.0,30,12.0787,0.0,12.0787,12.0787,0.6395,1.119,24.09,,R1-D1,0
+R1-D1:rev:blocked,R1-D1,rev,success,NavFnDijkstra,dijkstra,30,30,100.0,30,10.8513,0.0,10.8513,10.8513,0.861,1.561,24.181,,R1-D1,0
+R1-D1:rev:blocked,R1-D1,rev,success,NavFnAStar,astar,30,30,100.0,30,10.8343,0.0,10.8343,10.8343,1.1405,1.684,21.2855,,R1-D1,0
+R1-D2:fwd:blocked,R1-D2,fwd,failure,NavFnDijkstra,dijkstra,30,0,0.0,30,,,,,,,14.86,NO_VALID_PATH,R1-D2,
+R1-D2:fwd:blocked,R1-D2,fwd,failure,NavFnAStar,astar,30,0,0.0,30,,,,,,,15.227,NO_VALID_PATH,R1-D2,
+R1-D2:rev:blocked,R1-D2,rev,failure,NavFnDijkstra,dijkstra,30,0,0.0,30,,,,,,,15.7875,NO_VALID_PATH,R1-D2,
+R1-D2:rev:blocked,R1-D2,rev,failure,NavFnAStar,astar,30,0,0.0,30,,,,,,,15.8055,NO_VALID_PATH,R1-D2,
