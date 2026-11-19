@@ -6,6 +6,12 @@
   <maintainer email="waterhyunsu@gmail.com">SMART-LOGISTICS AMR</maintainer>
   <license>TODO</license>
   <depend>python3-setuptools</depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>unique_identifier_msgs</exec_depend>
+  <exec_depend>logistics_msgs</exec_depend>
   <test_depend>python3-pytest</test_depend>
   <test_depend>ament_index_python</test_depend>
   <export>

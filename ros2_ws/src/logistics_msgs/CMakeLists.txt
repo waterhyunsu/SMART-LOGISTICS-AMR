@@ -7,6 +7,9 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TaskStep.msg"
   "srv/OptimizeRoute.srv"
+  "srv/DispatchGoal.srv"
+  "srv/ReportGoalEvent.srv"
+  "srv/LookupGoal.srv"
 )
 ament_export_dependencies(rosidl_default_runtime)
 

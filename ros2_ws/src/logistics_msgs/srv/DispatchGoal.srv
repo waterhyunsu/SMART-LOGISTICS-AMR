@@ -1,0 +1,32 @@
+# A -> D: hand over one navigation goal. The response only confirms that D
+# received the request. Nav2 goal acceptance is reported separately through
+# report_goal_event.
+#
+# Execution context, exactly as persisted by A.
+string mission_id
+string step_id            # empty string = standalone HOME return (A step_id=None)
+uint64 plan_version
+string waypoint_id
+string attempt_id
+string nav_goal_id        # Nav2 goal UUID, 32 lowercase hex characters
+---
+uint8 RESULT_ACCEPTED=1   # new request received; Nav2 send started (not Nav2 acceptance)
+uint8 RESULT_DUPLICATE=2  # same attempt/UUID/context again: no new send, current state returned
+uint8 RESULT_CONFLICT=3   # known attempt_id or nav_goal_id with a different context: refused
+uint8 RESULT_NOT_READY=4  # Nav2 not ready or another goal active/uncertain: nothing sent
+uint8 RESULT_INVALID=5    # malformed field or unknown waypoint: nothing sent
+
+uint8 STATE_NONE=0
+uint8 STATE_SENT=1
+uint8 STATE_ACTIVE=2
+uint8 STATE_SUCCEEDED=3
+uint8 STATE_ABORTED=4
+uint8 STATE_CANCELED=5
+uint8 STATE_REJECTED=6
+uint8 STATE_UNCERTAIN=7
+
+uint8 result
+uint8 goal_state          # D-side state of nav_goal_id after handling this request
+string attempt_id
+string nav_goal_id
+string reason
