@@ -1,0 +1,46 @@
+# B 연구 1 — R1-D 경로 차단 (run_compare.py 가 읽는다)
+#
+# [초안-팀합의필요] 임시 비교 지도: lecture_hall_v1.yaml 과 같은 legacy 강의실 복제 맵. D 의 공식 지도(P-014) 전까지 쓴다.
+#
+# 쌍마다 같은 출발/목표를 두 번 계획한다.
+#   <id>:<방향>          시나리오 지도 그대로 (차단 전). expect 와 비교한다.
+#   <id>:<방향>:blocked  obstacles 상자를 점유 칸으로 그린 지도 사본 (차단 후). expect_blocked 와 비교한다.
+# 차단 지도는 map_server/load_map 으로 바꿔 넣고, global costmap 에 상자가 lethal 로 나타난 것을 확인한 뒤에만 잰다.
+# NavFn 은 요청마다 costmap 전체에서 새로 계산하므로(이전 경로를 기억하지 않음), 차단 후 계획이 곧 "경로 재생성"이다.
+# 장애물을 언제 감지하고 언제 재계획을 요청하는지(BT·센서)는 주행 비교(D 협업)에서 따로 본다.
+#
+# obstacles: [중심 x (m), 중심 y (m), 가로 (m), 세로 (m), 회전 (deg)] — legacy_r1 R1-D1·R1-D2 와 같은 상자 위치.
+# 세로 복도: x = 0.0 (복도 2), 2.3 (복도 3), 4.6 (복도 4). 상자는 각 복도의 가운데(y = 3.3)를 막는다.
+
+scenario_set: lecture_hall_v1_r1d
+map:
+  name: lecture_hall_real
+  yaml: ../legacy_r1/experiments/r1/maps/lecture_hall_real.yaml   # 이 파일 기준 상대 경로
+  frame_id: map
+
+points:
+  home:        [0.0, 0.0, 90]       # 뒤쪽 가로 복도 x 세로 복도 2 (lecture_hall_v1 과 같은 점)
+  front_v2:    [0.0, 6.5, 90]       # 세로 복도 2 앞쪽 끝, 좌석 앞 가로 복도
+  stage_right: [5.6, 7.9, 180]      # 강단 오른쪽 (lecture_hall_v1 과 같은 점)
+
+pairs:
+  - id: R1-D1
+    name: 경로 차단 → 재생성 (우회 가능)
+    from: home
+    to: front_v2
+    reverse: true
+    expect: success                 # 차단 전: 세로 복도 2 로 곧게 간다
+    obstacles:
+      - [0.0, 3.3, 0.8, 0.3, 0]     # 세로 복도 2 가운데
+    expect_blocked: success         # 차단 후: 다른 세로 복도로 돌아가는 경로가 있어야 한다
+  - id: R1-D2
+    name: 경로 차단 → 실패 처리 (경로 없음)
+    from: home
+    to: stage_right
+    reverse: true
+    expect: success
+    obstacles:                      # 세로 복도 3개를 모두 막아 앞쪽(강단)으로 가는 길이 없다
+      - [0.0, 3.3, 0.8, 0.3, 0]
+      - [2.3, 3.3, 0.8, 0.3, 0]
+      - [4.6, 3.3, 0.8, 0.3, 0]
+    expect_blocked: failure         # 차단 후: 임의 거리 없이 실패로 남아야 한다 (INTERFACES §8.4)

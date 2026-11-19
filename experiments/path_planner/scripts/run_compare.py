@@ -5,6 +5,10 @@ Every request is ComputePathToPose with an explicit start pose (use_start: true)
 planner params file. Before measuring, the script checks that map_server serves the scenario map and that
 planner_server runs exactly the NavFn parameters of the params file; it refuses to measure otherwise.
 
+Pairs with obstacles (path blocking, R1-D) are measured again on a copy of the map with the boxes drawn in. The
+script loads that copy through map_server/load_map and measures only after the global costmap shows exactly those
+boxes as lethal; at the end it loads the scenario map again.
+
     ros2 launch experiments/path_planner/launch/planner_bench.launch.py map:=<map.yaml>
     python3 experiments/path_planner/scripts/run_compare.py \
         --scenarios experiments/path_planner/scenarios/lecture_hall_v1.yaml --run-mode SIM --repeat 10
@@ -14,8 +18,10 @@ import argparse
 import math
 import os
 import platform
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 
@@ -39,6 +45,9 @@ def parse_args(argv=None):
     p.add_argument('--action', default='compute_path_to_pose')
     p.add_argument('--planner-node', default='planner_server')
     p.add_argument('--map-topic', default='map')
+    p.add_argument('--load-map-service', default='map_server/load_map', help='used for pairs with obstacles')
+    p.add_argument('--costmap-topic', default='global_costmap/costmap',
+                   help='checked after a map switch until it shows the obstacles')
     p.add_argument('--server-timeout', type=float, default=30.0, help='s to wait for action server, map, params')
     p.add_argument('--plan-timeout', type=float, default=30.0, help='s to wait for one planning result')
     p.add_argument('--git-commit', default='', help='repo commit to record (auto-detected when git works)')
@@ -104,6 +113,19 @@ class Nav2Planner:
             planning_ms if planning_ms > 0 else None, roundtrip, code, name, reason, getattr(res, 'error_msg', ''))
 
 
+def grid_info(msg):
+    info = msg.info
+    return {'width': info.width, 'height': info.height, 'resolution': round(info.resolution, 6),
+            'origin': [round(info.origin.position.x, 6), round(info.origin.position.y, 6)],
+            'frame_id': msg.header.frame_id}
+
+
+def same_geometry(loaded, want):
+    return (loaded['width'], loaded['height']) == (want['width'], want['height']) \
+        and math.isclose(loaded['resolution'], want['resolution'], abs_tol=1e-6) \
+        and all(math.isclose(a, b, abs_tol=1e-6) for a, b in zip(loaded['origin'], want['origin']))
+
+
 def check_map(node, scenarios, topic, timeout):
     """Wait for the latched map and compare its size, resolution and origin with the scenario map file."""
     from nav_msgs.msg import OccupancyGrid
@@ -118,16 +140,88 @@ def check_map(node, scenarios, topic, timeout):
     node.destroy_subscription(sub)
     if not got:
         raise RuntimeError(f'no map on /{topic} within {timeout} s')
-    info, want = got[-1].info, core.map_info(scenarios.map_yaml)
-    loaded = {'width': info.width, 'height': info.height, 'resolution': round(info.resolution, 6),
-              'origin': [round(info.origin.position.x, 6), round(info.origin.position.y, 6)],
-              'frame_id': got[-1].header.frame_id}
-    same = (loaded['width'], loaded['height']) == (want['width'], want['height']) \
-        and math.isclose(loaded['resolution'], want['resolution'], abs_tol=1e-6) \
-        and all(math.isclose(a, b, abs_tol=1e-6) for a, b in zip(loaded['origin'], want['origin']))
-    if not same or loaded['frame_id'] != scenarios.frame_id:
+    loaded, want = grid_info(got[-1]), core.map_info(scenarios.map_yaml)
+    if not same_geometry(loaded, want) or loaded['frame_id'] != scenarios.frame_id:
         raise RuntimeError(f'map_server serves {loaded}, scenario map is {want} in frame {scenarios.frame_id}')
     return loaded
+
+
+LETHAL = 100   # OccupancyGrid value of an occupied map cell and of a LETHAL_OBSTACLE costmap cell
+
+
+class MapSwitcher:
+    """``set_map`` for bench_core.run_trials: switches map_server between the scenario map and its blocked copies.
+
+    A switch counts only when (1) load_map succeeds and returns a map with the scenario map's geometry, and (2) a
+    global costmap message shows every cell of the variant's boxes as lethal while each box that belongs only to
+    other variants still has a non-lethal cell. Otherwise it raises and nothing is measured on that map.
+    """
+
+    def __init__(self, node, scenarios, work_dir, service, costmap_topic, timeout):
+        from nav2_msgs.srv import LoadMap
+        from nav_msgs.msg import OccupancyGrid
+        from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+        self.node, self.timeout, self.LoadMap, self.service = node, timeout, LoadMap, service
+        self.client = node.create_client(LoadMap, service)
+        self.costmaps = []
+        qos = QoSProfile(depth=1, durability=DurabilityPolicy.VOLATILE, reliability=ReliabilityPolicy.RELIABLE)
+        self.sub = node.create_subscription(OccupancyGrid, costmap_topic, self.costmaps.append, qos)
+        self.geometry = core.map_info(scenarios.map_yaml)
+        self.boxes = {'': ()} | scenarios.map_variants()
+        self.paths, self.versions, self.records = {'': scenarios.map_yaml}, {}, {}
+        for variant, boxes in self.boxes.items():
+            if variant:
+                name = f'{scenarios.map_name}_{variant}'
+                self.paths[variant] = core.write_blocked_map(scenarios.map_yaml, boxes, work_dir, name)
+                self.versions[variant] = core.map_version(f'{scenarios.map_name}+{variant}', self.paths[variant])
+        self.current = ''
+
+    def shows(self, msg, variant):
+        """True when the grid has the variant's boxes and none of the boxes only other variants add."""
+        g = grid_info(msg)
+        if not same_geometry(g, self.geometry):
+            return False
+        own = set(self.boxes[variant])
+        others = {b for v, bs in self.boxes.items() if v != variant for b in bs} - own
+
+        def lethal(box):
+            cells = core.box_cells(box, g['width'], g['height'], g['resolution'], g['origin'])
+            return [msg.data[j * g['width'] + i] == LETHAL for i, j in cells]
+        return all(all(lethal(b)) for b in own) and not any(all(lethal(b)) for b in others)
+
+    def __call__(self, variant):
+        if variant == self.current:
+            return
+        import rclpy
+        t0 = time.monotonic()
+        if not self.client.wait_for_service(timeout_sec=self.timeout):
+            raise RuntimeError(f'/{self.service} not available')
+        req = self.LoadMap.Request()
+        req.map_url = self.paths[variant]
+        future = self.client.call_async(req)
+        if not spin_until(self.node, future, self.timeout):
+            raise RuntimeError(f'/{self.service} did not answer within {self.timeout} s')
+        res = future.result()
+        if res.result != self.LoadMap.Response.RESULT_SUCCESS:
+            raise RuntimeError(f'load_map {req.map_url} failed with result {res.result}')
+        if not self.shows(res.map, variant):
+            raise RuntimeError(f'map_server loaded {grid_info(res.map)} without the expected obstacles of {variant!r}')
+        self.costmaps.clear()
+        end = time.monotonic() + self.timeout
+        while time.monotonic() < end:
+            rclpy.spin_once(self.node, timeout_sec=0.2)
+            if self.costmaps and self.shows(self.costmaps[-1], variant):
+                break
+            del self.costmaps[:-1]
+        else:
+            raise RuntimeError(f'global costmap did not show map variant {variant!r} within {self.timeout} s')
+        self.current = variant
+        if variant:
+            self.records[variant] = {
+                'map_version': self.versions[variant], 'obstacles': [b.as_list() for b in self.boxes[variant]],
+                'map_file': os.path.basename(self.paths[variant]), 'switch_s': round(time.monotonic() - t0, 2)}
+        print(f'map switched to {variant or "scenario map"} '
+              f'({self.versions.get(variant, "scenario map")}, {time.monotonic() - t0:.1f} s)', flush=True)
 
 
 def check_planner_params(node, planner_node, configs, timeout):
@@ -193,19 +287,32 @@ def main(argv=None):
     import rclpy
     rclpy.init()
     node = rclpy.create_node('path_planner_bench')
+    work_dir = tempfile.mkdtemp(prefix='path_planner_maps_')   # blocked map copies, read by map_server on load
+    switcher = None
     try:
         planner = Nav2Planner(node, args.action, scenarios.frame_id, args.plan_timeout)
         if not planner.client.wait_for_server(timeout_sec=args.server_timeout):
             raise SystemExit(f'ComputePathToPose server /{args.action} not available; start the launch file first')
         loaded_map = check_map(node, scenarios, args.map_topic, args.server_timeout)
         server_params = check_planner_params(node, args.planner_node, configs, args.server_timeout)
+        extra = {}
+        if scenarios.map_variants():
+            switcher = MapSwitcher(node, scenarios, work_dir, args.load_map_service, args.costmap_topic,
+                                   args.server_timeout)
+            extra = {'set_map': switcher, 'variant_map_versions': switcher.versions}
         print(f'{exp_id}: {len(scenarios.runs)} runs x {len(configs)} planners x ({args.warmup} warmup + '
               f'{args.repeat}) on {versions["map_version"]}, {versions["config_version"]}', flush=True)
         rows = core.run_trials(scenarios, configs, planner, repeat=args.repeat, warmup=args.warmup,
-                               run_mode=args.run_mode, experiment_id=exp_id, **versions)
+                               run_mode=args.run_mode, experiment_id=exp_id, **versions, **extra)
+        if switcher is not None:
+            try:      # leave map_server as the launch file started it; the measured rows are already complete
+                switcher('')
+            except RuntimeError as e:
+                print(f'WARNING: could not restore the scenario map: {e}', flush=True)
     finally:
         node.destroy_node()
         rclpy.shutdown()
+        shutil.rmtree(work_dir, ignore_errors=True)
 
     summary = core.summarize(rows)
     meta = {
@@ -216,6 +323,7 @@ def main(argv=None):
         'params_file': os.path.relpath(os.path.abspath(args.params), BENCH_DIR).replace(os.sep, '/'),
         'map_file': os.path.relpath(scenarios.map_yaml, BENCH_DIR).replace(os.sep, '/'),
         'frame_id': scenarios.frame_id, 'loaded_map': loaded_map, 'planner_server_params': server_params,
+        'map_variants': switcher.records if switcher is not None else {},
         'planners': [{'planner_id': c.planner_id, 'algorithm': c.algorithm, 'params': c.params} for c in configs],
         'request': {'action': args.action, 'use_start': True},
         'env': {'ros_distro': os.environ.get('ROS_DISTRO'), 'nav2_planner': package_version('nav2_planner'),
