@@ -13,7 +13,7 @@ ROS2 Jazzy·Nav2 기반 TurtleBot3 Waffle Pi를 활용한 5인 졸업 프로젝�
 - **아키텍처:** v1.0 승인
 - **현재 단계:** Phase 1 — 팀원별 담당 기능 개발
 
-> 개발 PC의 ROS2 Jazzy 환경은 기본 동작을 확인했다. TurtleBot3 실차의 Jazzy 호환성 및 통합 주행은 별도 검증이 필요하다.
+> TurtleBot3의 Raspberry Pi 4에 Ubuntu 24.04 ARM64와 ROS2 Jazzy를 설치하고 OpenCR·LDS-02 연결 및 센서 수신을 확인했다. 바퀴 구동과 다른 PC와의 DDS 통신은 검증 대기다. [실차 환경·Bringup 기록](docs/TURTLEBOT3_BRINGUP.md)
 
 ## 처음 개발을 시작한다면
 
@@ -303,7 +303,7 @@ DWB·RPP 비교, 고급 예외 처리, 실험 분석 고도화, 필요 시 ArUco
 | 패키지 빌드 | colcon 빌드 및 노드 실행 | 확인 |
 | 시뮬레이터 | Gazebo 기본 월드 실행 | 확인 |
 | 시각화 | RViz 기본 실행 | 확인 |
-| 실차 Bringup | TurtleBot3 하드웨어·센서 | 미검증 |
+| 실차 기본 Bringup | Raspberry Pi 4·OpenCR·LDS-02, `/scan`·`/odom` 수신 | 로봇 내부에서 확인. [환경·토픽 기록](docs/TURTLEBOT3_BRINGUP.md) |
 | 실차 Nav2 | AMCL·목표 주행 | 미검증 |
 | A 미션 실행 | 주문·재계획·인계·HOME 완료 및 복구 | MOCK 검증 완료([PR #8](https://github.com/waterhyunsu/SMART-LOGISTICS-AMR/pull/8)) |
 | 실제 모듈 통합 | A↔C 실제 서버, A↔D 전송·복구, A↔E 웹 인계 | 통합 대기 |
