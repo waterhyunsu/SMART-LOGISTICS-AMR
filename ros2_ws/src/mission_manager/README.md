@@ -134,3 +134,34 @@ python3 -m pytest -q src/mission_manager/test/test_navigation_boundary.py
 UUID 저장은 외부 송신 전에 완료된다. 송신 실패 시 기존 저장값을 유지하며, 재시작 시 선점된 목표에서 복구 제한을 복원한다. DB COMMIT과 외부 송신은 별도 단계이므로 재시도 전에 D가 실행 및 지연 송신 부재를 확인해야 한다.
 
 실제 Nav2 UUID/Action API, D의 실행 부재 증빙 및 지연 송신 배제, D 프로세스와 로봇 통신, 실차 주행은 후속 연동 검증 범위다.
+
+## Gate 1 A↔D ROS 2 서비스 검증
+
+`NavigationServices(manager)`는 Mission Manager의 단일 executor에서 기존
+`NavigationDispatchBoundary`를 ROS 2의 `dispatch_goal`, `report_goal_event`,
+`lookup_goal`에 연결한다. Gate 1 테스트가 이 어댑터를 등록하며 기본 CLI는
+계획 승인까지 실행한다.
+
+- 호출자가 `claim_next_goal()`로 선점한 목표를 `dispatch(goal)`에 전달한다.
+  A가 SQLite에 UUID를 커밋한 뒤 D에 한 번 송신한다. D의 접수 응답과
+  Nav2의 수락 이벤트는 각각 확인한다. 일반 TaskStep은 일치하는 도착
+  이벤트를 적용한 뒤 인계 대기가 된다.
+- 접수·수락 시간 초과, 실패, 취소, 불확실 응답은 복구 조회 대상으로 둔다.
+  `lookup()`은 매번 새 확인 ID를 생성한다. 결과가 불확실하거나 조회가
+  실패하면 같은 시도를 유지한다. DDS 탐색에서 D의 두 서비스가 모두
+  사라졌을 때도 진행 중인 시도를 복구 제한에 둔다. `NO_ACTIVE_GOAL`과 지연 송신 부재가
+  함께 확인되면 `approve_retry(lookup, explicitly_approved=True)`로
+  새 시도를 승인할 수 있다. 승인을 받아도 송신은 별도 호출이다.
+- 테스트용 접수·수락 및 조회 기한은 `timeout_sec`으로 설정한다. 기본값은
+  5초다. 실제 실행 상태를 판단할 운영 기한과 프로세스 재시작 후 D의
+  Nav2 UUID 조회 방식은 SIM 통합 대상이다.
+
+PR #12의 D 노드와 가짜 Nav2 Action 서버가 포함된 워크스페이스를 빌드하고
+`ros2_ws`에서 다음을 실행한다. 테스트가 실제 A 노드와 별도 D·가짜 Nav2
+프로세스를 격리된 ROS 네임스페이스에서 실행한다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+python3 -m pytest -q src/mission_manager/test/test_navigation_services.py
+```
