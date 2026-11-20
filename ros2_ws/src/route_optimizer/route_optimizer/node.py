@@ -1,6 +1,7 @@
 """OptimizeRoute server backed by the fixed Research 2 MOCK snapshot."""
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
 from logistics_msgs.srv import OptimizeRoute
@@ -65,7 +66,7 @@ def main(args=None):
     node = RouteOptimizer()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
