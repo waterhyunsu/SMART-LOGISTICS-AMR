@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_core as core  # noqa: E402
 import drive_core as drive  # noqa: E402
-from run_compare import check_map, git_commit, package_version, spin_until  # noqa: E402
+from run_compare import check_map, git_commit, package_version, spin_until, wait_for_active  # noqa: E402
 
 BENCH_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_PARAMS = os.path.join(BENCH_DIR, 'config', 'nav2_drive.yaml')
@@ -309,6 +309,12 @@ def main(argv=None):
         d = Driver(node, args, scenarios.frame_id)
         if not d.client.wait_for_server(timeout_sec=args.server_timeout):
             raise SystemExit('navigate_to_pose not available; start launch/drive_bench.launch.py first')
+        # action servers are discoverable before their lifecycle nodes are activated and reject goals until then
+        try:
+            lifecycle = wait_for_active(node, ['map_server', 'amcl', 'planner_server', 'controller_server',
+                                               'bt_navigator'], args.server_timeout)
+        except RuntimeError as e:
+            raise SystemExit(str(e)) from None
         loaded_map = check_map(node, scenarios, 'map', args.server_timeout)
         end = time.monotonic() + args.server_timeout
         while (d.odom is None or d.sim_now() <= 0.0) and time.monotonic() < end:
@@ -390,7 +396,8 @@ def main(argv=None):
         'scenario_file': os.path.relpath(scenarios.path, BENCH_DIR).replace(os.sep, '/'),
         'params_file': os.path.relpath(os.path.abspath(args.params), BENCH_DIR).replace(os.sep, '/'),
         'map_file': os.path.relpath(scenarios.map_yaml, BENCH_DIR).replace(os.sep, '/'),
-        'loaded_map': loaded_map, 'planner_id': args.planner, 'planner_plugin': planner_plugin,
+        'loaded_map': loaded_map, 'lifecycle_before_measuring': lifecycle, 'planner_id': args.planner,
+        'planner_plugin': planner_plugin,
         'controller_id': controller_id,
         'procedure': 'per trial: set use_astar and read it back (NavFn), set_pose to the start, spawn boxes (blocked '
                      'runs), initialpose until AMCL is on the start, clear both costmaps, NavigateToPose with the '

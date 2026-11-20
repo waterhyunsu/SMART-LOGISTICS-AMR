@@ -14,6 +14,7 @@ import json
 import math
 import os
 import statistics
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -535,6 +536,33 @@ def end_error(points, goal):
 def yaw_quaternion(yaw_deg):
     half = math.radians(yaw_deg) / 2.0
     return 0.0, 0.0, math.sin(half), math.cos(half)
+
+
+ACTIVE_STATE = 3     # lifecycle_msgs/msg/State.PRIMARY_STATE_ACTIVE
+
+
+def wait_until_active(get_state, names, timeout, sleep=time.sleep, clock=time.monotonic, poll=0.2):
+    """Block until every lifecycle node in ``names`` reports the active state; raise after ``timeout`` s.
+
+    ``get_state(name)`` returns (state id, label), or None while the node does not answer. An action server can be
+    discovered before its node is activated and rejects goals until then, so measuring must wait for this.
+    Returns {name: 'label [id]'} of the confirmed states.
+    """
+    end, seen = clock() + timeout, {}
+    for name in names:
+        last = 'no answer'
+        while True:
+            state = get_state(name)
+            if state is not None:
+                last = f'{state[1]} [{state[0]}]'
+                if state[0] == ACTIVE_STATE:
+                    break
+            if clock() >= end:
+                raise RuntimeError(f'/{name} is not active after {timeout} s (last state: {last}); '
+                                   'no trial was measured')
+            sleep(poll)
+        seen[name] = last
+    return seen
 
 
 def error_table(result_cls):

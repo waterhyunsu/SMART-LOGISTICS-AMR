@@ -43,6 +43,8 @@ def parse_args(argv=None):
     p.add_argument('--out', default=DEFAULT_OUT, help='results root; a new <experiment_id>/ is created inside')
     p.add_argument('--action', default='compute_path_to_pose')
     p.add_argument('--planner-node', default='planner_server')
+    p.add_argument('--lifecycle-nodes', default='map_server,planner_server',
+                   help='comma separated lifecycle nodes that must be active before the first warmup request')
     p.add_argument('--map-topic', default='map')
     p.add_argument('--load-map-service', default='map_server/load_map', help='used for pairs with obstacles')
     p.add_argument('--costmap-topic', default='global_costmap/costmap',
@@ -58,6 +60,27 @@ def spin_until(node, future, timeout):
     import rclpy
     rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
     return future.done()
+
+
+def wait_for_active(node, names, timeout):
+    """Wait until the lifecycle nodes ``names`` are active (asked through <node>/get_state); raise otherwise."""
+    from lifecycle_msgs.srv import GetState
+    clients = {name: node.create_client(GetState, f'{name}/get_state') for name in names}
+
+    def get_state(name):
+        if not clients[name].wait_for_service(timeout_sec=1.0):
+            return None
+        future = clients[name].call_async(GetState.Request())
+        if not spin_until(node, future, 5.0) or future.result() is None:
+            return None
+        state = future.result().current_state
+        return state.id, state.label
+
+    try:
+        return core.wait_until_active(get_state, names, timeout)
+    finally:
+        for client in clients.values():
+            node.destroy_client(client)
 
 
 class Nav2Planner:
@@ -303,6 +326,11 @@ def main(argv=None):
         planner = Nav2Planner(node, args.action, scenarios.frame_id, args.plan_timeout)
         if not planner.client.wait_for_server(timeout_sec=args.server_timeout):
             raise SystemExit(f'ComputePathToPose server /{args.action} not available; start the launch file first')
+        # the action server is discoverable before planner_server is activated and rejects goals until then
+        try:
+            lifecycle = wait_for_active(node, args.lifecycle_nodes.split(','), args.server_timeout)
+        except RuntimeError as e:
+            raise SystemExit(str(e)) from None
         loaded_map = check_map(node, scenarios, args.map_topic, args.server_timeout)
         server_params = check_planner_params(node, args.planner_node, configs, args.server_timeout)
         extra = {}
@@ -338,6 +366,7 @@ def main(argv=None):
         'params_file': os.path.relpath(os.path.abspath(args.params), BENCH_DIR).replace(os.sep, '/'),
         'map_file': os.path.relpath(scenarios.map_yaml, BENCH_DIR).replace(os.sep, '/'),
         'frame_id': scenarios.frame_id, 'loaded_map': loaded_map, 'planner_server_params': server_params,
+        'lifecycle_before_measuring': lifecycle,
         'map_variants': switcher.records if switcher is not None else {},
         'path_metrics': {'clearance': 'm from path poses (robot centre) to the nearest occupied map cell, cell-based',
                          'turn_sum_deg': 'sum of |heading change| on the path resampled every 0.10 m',
