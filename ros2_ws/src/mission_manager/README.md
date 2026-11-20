@@ -184,3 +184,38 @@ D는 송신 전 `NOT_READY`로 거절한 시도와 UUID를 기록한다. 같은 
 ```bash
 python3 -m pytest -q src/mission_manager/test/test_navigation_services.py   -k retry_after_not_ready_then_nav2_start
 ```
+
+### 공용 PC에서 A↔D 단일 목표 SIM
+
+PR #14의 코드가 포함된 체크아웃에서 Jazzy와 작업 공간을 빌드하고 source한
+뒤, 저장소 루트에서 [예제 설정](../../../scripts/a_d_sim.example.json)을 복사해
+D와 합의한 값으로 채운다. [실행 스크립트](../../../scripts/verify_a_d_sim.py)는
+공용 PC의 SIM 프로세스를 실행하고 결과를 파일에 기록한다.
+
+- `sim_command`에는 공용 PC에서 사용할 Gazebo·Nav2 실행 명령을 인자 배열로
+  적는다. `{map_yaml}`은 지정한 지도 YAML 절대 경로로, `{config_dir}`는 설정
+  파일의 상위 경로로 치환된다. 명령의 작업 디렉터리도 설정 파일의 상위 경로다.
+- `initial_pose`와 `waypoint.pose`는 지도 좌표계의 `[x, y, yaw]`이며 yaw는
+  라디안이다. D가 확인한 Waypoint ID를 넣는다. Nav2의 최종 위치 판정에 사용할
+  거리 허용치는 `tolerance_m`으로 지정한다.
+- `d_command: null`은 PR #14의 D 어댑터를 사용하고 입력 좌표를 해당 프로세스에만
+  주입한다. D가 별도 실행 명령을 공유하면 인자 배열로 지정할 수 있다. 별도 D
+  실행은 같은 Waypoint·SIM 시간·루트 네임스페이스를 사용하고, PR #14의
+  `[SEND] <UUID> → waypoint <ID> (x, y, yaw)` 로그 형식을 제공해야 한다.
+- 격리된 미사용 `ros_domain_id`를 선택한다. 실행기는 localhost DDS, 빈 정적 피어,
+  실행별 Gazebo 파티션을 설정한다. SIM 구성은 루트 네임스페이스의 표준 Nav2
+  Action·lifecycle 서비스·센서 토픽을 사용한다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ros2_ws/install/setup.bash
+python3 scripts/verify_a_d_sim.py /path/to/team-sim.json
+python3 scripts/verify_a_d_sim.py /path/to/team-sim.json --run --log-dir /path/to/sim-logs
+```
+
+첫 명령은 설정 검사다. `--run` 실행은 센서·AMCL·TF·Nav2 활성 상태를 기다린
+뒤, 고정된 수거·전달 계획의 첫 목표를 송신한다. 검증 대상은 D 송신 로그 1건,
+A·D·Nav2 UUID 일치, Nav2 `SUCCEEDED`, 지도 좌표의 도착 위치, A의 인계 대기다.
+외부 C 서비스 없이 고정 계획을 사용하며 인계 확정이나 다음 목표 송신은 수행하지
+않는다. 성공과 실패 모두 `summary.json`, `sim.log`, `d.log` 등에 기록한다.
+준비 단계에서 실패하면 시작된 프로세스의 로그만 생긴다.
