@@ -5,8 +5,9 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import Mock, call
 
-from verify_a_d_sim import GoalEvidence, load_config, verify_evidence
+from verify_a_d_sim import GoalEvidence, load_config, ros_context, verify_evidence
 
 
 UUID = '0123456789abcdef0123456789abcdef'
@@ -14,6 +15,32 @@ OTHER_UUID = 'f' * 32
 POSE = (1.0, -0.5, 0.3)
 SEND = f'[INFO] [D]: [SEND] {UUID} → waypoint TEST (1.0, -0.5, 0.3)'
 SCRIPT = Path(__file__).with_name('verify_a_d_sim.py')
+
+
+class RosContextTests(unittest.TestCase):
+    def test_init_return_value_is_ignored_and_shutdown_follows_work(self):
+        ros = Mock()
+        ros.init.return_value = None  # ROS 2 Jazzy
+        args = ['--ros-args', '-p', 'use_sim_time:=true']
+        with ros_context(ros, args):
+            ros.spin()
+        self.assertEqual(ros.mock_calls, [call.init(args=args), call.spin(), call.try_shutdown()])
+
+    def test_shutdown_runs_when_work_raises(self):
+        ros = Mock()
+        ros.init.return_value = None
+        with self.assertRaisesRegex(RuntimeError, 'startup failed'):
+            with ros_context(ros, []):
+                raise RuntimeError('startup failed')
+        ros.try_shutdown.assert_called_once_with()
+
+    def test_failed_init_propagates(self):
+        ros = Mock()
+        ros.init.side_effect = RuntimeError('init failed')
+        with self.assertRaisesRegex(RuntimeError, 'init failed'):
+            with ros_context(ros, []):
+                self.fail('entered context after failed init')
+        ros.try_shutdown.assert_not_called()
 
 
 class EvidenceTests(unittest.TestCase):

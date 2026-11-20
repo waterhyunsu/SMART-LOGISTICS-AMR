@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run a single PR #14 navigation goal in an isolated Gazebo SIM."""
 import argparse
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 import json
 from math import cos, hypot, isclose, isfinite, sin
@@ -171,12 +171,22 @@ def launch(stack, argv, log_path, cwd):
     return process
 
 
+@contextmanager
+def ros_context(rclpy, args):
+    # Jazzy's init() returns None.
+    rclpy.init(args=args)
+    try:
+        yield
+    finally:
+        rclpy.try_shutdown()
+
+
 def run_pr14_d(config):
     import rclpy
     from amr_navigation import gate1_mock
 
     gate1_mock.MOCK_WAYPOINTS = {config.waypoint_id: config.waypoint_pose}
-    with rclpy.init(args=['--ros-args', '-p', 'use_sim_time:=true']):
+    with ros_context(rclpy, ['--ros-args', '-p', 'use_sim_time:=true']):
         node = gate1_mock.DNavigationNode()
         try:
             rclpy.spin(node)
@@ -206,7 +216,7 @@ def run_sim(config, config_path, log_dir, summary):
     if not Path(mission_module.__file__).resolve().is_relative_to(ROOT / 'ros2_ws'):
         raise ValueError('source this PR #14 workspace install/setup.bash before running')
 
-    with rclpy.init(args=[]), ExitStack() as stack:
+    with ros_context(rclpy, []), ExitStack() as stack:
         manager = mission_module.MissionManager(parameter_overrides=[
             Parameter('use_sim_time', value=True),
             Parameter('database_path', value=str(log_dir / 'mission.sqlite'))])
