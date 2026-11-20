@@ -8,9 +8,9 @@
 | 항목 | 상태 |
 | --- | --- |
 | B 가이드 첫 번째 기능: 재현 가능한 비교 조건 | 구현함. 고정 출발/목표 쌍, 실패 사례, 설정 쌍, 실행 스크립트, 결과 기록 |
-| MOCK | `tests/` 62개 통과 (가짜 플래너, 경로 차단 20개·경로 품질 12개·주행 결과 처리 7개·그래프 2개 포함) |
-| SIM (planner-only) | Jazzy Docker에서 측정: R1-A~C·도달 불가 [`results/20261118T061956Z_SIM_lecture_hall_v1`](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md), R1-D 경로 차단 [`results/20261119T012513Z_SIM_lecture_hall_v1_r1d`](results/20261119T012513Z_SIM_lecture_hall_v1_r1d/summary.md), 경로 품질 지표와 경로 그림을 넣은 재측정 [`20261119T015445Z`](results/20261119T015445Z_SIM_lecture_hall_v1/summary.md)·[`20261119T015502Z`](results/20261119T015502Z_SIM_lecture_hall_v1_r1d/summary.md) |
-| SIM (Gazebo Harmonic 주행) | **B의 임시 환경**에서 측정: R1-A~C [`20261119T060115Z`](results/20261119T060115Z_SIM_lecture_hall_v1_drive/summary.md), R1-D1 [`20261119T044830Z`](results/20261119T044830Z_SIM_lecture_hall_v1_r1d_drive/summary.md). D의 주행 설정·공식 지도에서는 미측정 |
+| MOCK | `tests/` 73개 통과 (가짜 플래너, 경로 차단·경로 품질·주행 결과 처리·그래프·세 후보·lifecycle 대기 포함) |
+| SIM (planner-only) | Jazzy Docker에서 측정: R1-A~C·도달 불가 [`results/20261118T061956Z_SIM_lecture_hall_v1`](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md), R1-D 경로 차단 [`results/20261119T012513Z_SIM_lecture_hall_v1_r1d`](results/20261119T012513Z_SIM_lecture_hall_v1_r1d/summary.md), 경로 품질 지표와 경로 그림을 넣은 재측정 [`20261119T015445Z`](results/20261119T015445Z_SIM_lecture_hall_v1/summary.md)·[`20261119T015502Z`](results/20261119T015502Z_SIM_lecture_hall_v1_r1d/summary.md), **세 후보(Smac 2D 포함)** [`20261119T075850Z`](results/20261119T075850Z_SIM_lecture_hall_v1/summary.md)·[`20261119T075917Z`](results/20261119T075917Z_SIM_lecture_hall_v1_r1d/summary.md), lifecycle 확인을 넣은 R1-D 재측정 [`20261120T002730Z`](results/20261120T002730Z_SIM_lecture_hall_v1_r1d/summary.md). A가 Ubuntu 24.04 ARM64(UTM)에서 교차 실행해 같은 결과를 재현했다(PR #5 리뷰) |
+| SIM (Gazebo Harmonic 주행) | **B의 임시 환경**에서 측정: R1-A~C [`20261119T060115Z`](results/20261119T060115Z_SIM_lecture_hall_v1_drive/summary.md), R1-D1 [`20261119T044830Z`](results/20261119T044830Z_SIM_lecture_hall_v1_r1d_drive/summary.md). D의 주행 설정·공식 지도에서는 미측정. Smac 2D를 넣은 세 후보 주행은 **미측정**(측정 중단, 재측정 예정) |
 | REAL (실차) | 미측정 |
 | 지도 | **[초안-팀합의필요]** legacy 강의실 복제 맵을 임시로 사용. D의 공식 지도·HOME·A~D 지점(P-014) 확정 전 |
 | 전역 플래너 최종 선정 (P-009) | VERIFY. B의 잠정 권고는 [`REPORT.md`](REPORT.md) §6에 있다. 확정은 D 검증과 A 승인 뒤다 |
@@ -23,6 +23,7 @@
 | [`REPORT.md`](REPORT.md) | 기술 선정 보고서 (기획서 §12.4 양식, 작성 중) |
 | [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md) | 날짜순 실험 기록: 실험마다 목적, 바꾼 조건, 관찰, 문제와 원인 |
 | [`config/navfn_compare.yaml`](config/navfn_compare.yaml) | planner_server 하나에 NavFn 두 개(`NavFnAStar`, `NavFnDijkstra`). `use_astar`만 다르고 같은 global costmap을 쓴다 |
+| [`config/planner_candidates.yaml`](config/planner_candidates.yaml) | 위 NavFn 두 개에 Smac Planner 2D(`Smac2D`)를 세 번째 후보로 더한 설정. NavFn 블록과 costmap은 `navfn_compare.yaml`과 같다. 후보를 넓히는 것은 **[초안-팀합의필요]**다 |
 | [`scenarios/lecture_hall_v1.yaml`](scenarios/lecture_hall_v1.yaml) | 고정 지점과 쌍: R1-A 개방, R1-B 장애물 우회, R1-C 좁은 통로(각각 정·역방향), FAIL-WALLED(벽으로 막힌 영역), FAIL-OFFMAP(지도 밖 목표) |
 | [`scenarios/lecture_hall_v1_r1d.yaml`](scenarios/lecture_hall_v1_r1d.yaml) | R1-D 경로 차단: R1-D1 복도 하나를 막아 우회 경로 재생성, R1-D2 복도 셋을 모두 막아 실패 처리(각각 정·역방향, 차단 전·후) |
 | [`launch/planner_bench.launch.py`](launch/planner_bench.launch.py) | planner-only 스택: map_server + planner_server + lifecycle_manager + 정적 TF `map → base_footprint` |
@@ -52,6 +53,7 @@
 | 순서 영향 | 반복마다 두 플래너의 실행 순서를 바꾼다 |
 | 반복 | 예열 1회(요약에서 제외, `warmup=True`로 기록) + 측정 N회 |
 | 기록 | 성공과 실패를 모두 기록한다. 실패는 Nav2 오류 이름(`NO_VALID_PATH` 등)으로 남기고 임의 거리로 대체하지 않는다 |
+| 측정 시작 조건 | Action 서버가 검색된 뒤에도 `map_server`·`planner_server`의 lifecycle 상태가 `active`가 될 때까지 기다린다. 서버는 활성화 전에도 검색되고 그동안 요청을 거절하기 때문이다. 제한 시간 안에 `active`가 아니면 예열도 측정도 하지 않고 끝낸다(결과 폴더를 만들지 않음). 확인한 상태는 `meta.json`의 `lifecycle_before_measuring`에 남는다. 주행 비교는 `amcl`·`controller_server`·`bt_navigator`까지 확인한다 |
 | 경로 차단 (R1-D) | 시나리오 쌍의 `obstacles` 상자를 점유 칸으로 그린 지도 사본을 `map_server/load_map`으로 넣는다. global costmap에 상자 칸이 모두 lethal로 나타난 것을 확인한 뒤에만 잰다(확인하지 못하면 측정을 거부한다). 같은 쌍을 차단 전 지도와 차단 지도에서 모두 재고, 차단 지도는 `map_version`이 따로 붙는다(`<지도>+<쌍 ID>@<해시>`). 플래너 설정 파일은 바꾸지 않는다 |
 
 ## 실행 방법
@@ -131,7 +133,7 @@ python3 -m pytest experiments/path_planner/tests -q      # PyYAML, pytest 필요
 
 | 값 | 환경 영향 | 다룰 방법 |
 | --- | --- | --- |
-| 경로 길이·성공 여부·오류 코드 | Nav2 버전·설정·지도가 같으면 플랫폼과 무관해야 한다. **[미확인]** 다른 환경에서는 아직 교차 실행하지 않았다. 같은 PC에서도 Nav2를 새로 띄운 실행끼리 R1-C가 최대 0.0026 m 달랐다 ([실험 기록](EXPERIMENT_LOG.md)) | 네이티브 Ubuntu나 Mac VM에서 같은 명령을 실행하고 `summary.csv`의 `planned_distance`를 비교한다. 수 mm는 허용 오차로 본다 |
+| 경로 길이·성공 여부·오류 코드 | Nav2 버전·설정·지도가 같으면 플랫폼과 무관해야 한다. **교차 확인 1건:** A가 Ubuntu 24.04 ARM64(UTM) + Nav2 1.3.14에서 PR HEAD `fcb7a48`을 실행해 기본 비교 480/480, R1-D 480/480을 재현했다. 성공·실패 건수와 실패 사유가 같았고 평균 계획 경로 길이는 0.0001 m까지 같았다(PR #5 리뷰, A의 보고). 같은 PC에서도 Nav2를 새로 띄운 실행끼리 R1-C가 최대 0.0026 m 달랐던 적이 있다 ([실험 기록](EXPERIMENT_LOG.md)) | 다른 환경에서 같은 명령을 실행하고 `summary.csv`의 `planned_distance`를 비교한다. 수 mm는 허용 오차로 본다 |
 | `planning_time`, `roundtrip_time` | CPU와 가상화 방식(WSL2·Docker, UTM VM, 로봇 PC)에 따라 달라진다 | 같은 실험(같은 세션) 안에서 A*와 Dijkstra만 비교한다. 다른 PC 결과와 절대값을 비교하지 않는다 |
 | Nav2 버전 | Docker 이미지는 빌드 시점의 최신 apt 패키지를 받는다 (현재 1.3.14) | `meta.json`의 `env.nav2_planner`를 확인한다. 버전이 다르면 결과를 따로 본다 |
 | Mac (ARM64) | macOS에서는 Jazzy를 직접 실행하지 않고 Ubuntu VM이나 Docker를 쓴다. `ros:jazzy-ros-base`에는 arm64 이미지가 있다. **[미확인]** 이 Dockerfile로 arm64 빌드는 해 보지 않았다 | VM 결과는 VM 환경 결과로 표시한다 (AGENTS.md §7) |
@@ -278,6 +280,45 @@ NavFn은 요청마다 costmap 전체에서 새로 계산하므로 차단 후 계
 
 `planned_distance`는 모든 Pose 사이 거리의 합이라 잔 지그재그가 그대로 들어간다. 같은 길이라도 플래너에 따라 1 m 넘게 달라질 수 있다는 뜻이다(R1-D1 차단 후 정방향).
 실제 주행 거리가 이만큼 달라지는지는 측정하지 않았다(controller가 경로를 따라가는 방식에 달려 있다).
+
+## 측정 결과 — 세 후보 계획 비교, SIM (planner-only) — 후보 확장은 [초안-팀합의필요]
+
+실험 [`20261119T075850Z_SIM_lecture_hall_v1`](results/20261119T075850Z_SIM_lecture_hall_v1/summary.md)과
+[`20261119T075917Z_SIM_lecture_hall_v1_r1d`](results/20261119T075917Z_SIM_lecture_hall_v1_r1d/summary.md).
+NavFn의 `use_astar` 모드는 교과서식 A*와 구현이 다르다([REPORT §2.1](REPORT.md)). 그래서 정확한 우선순위 큐를 쓰는 격자 A*인 **Smac Planner 2D**를 세 번째 후보로 더해 같은 조건에서 쟀다.
+
+- 측정 코드 `df2693b`, 설정 `planner_candidates@46b8b7580ce1`, 지도·시나리오는 위와 같다. 예열 1회 + 30회.
+- 환경: Docker `amr-sim:jazzy`(Nav2 1.3.14, `nav2_smac_planner` 포함), Windows 11 + WSL2. Gazebo는 쓰지 않았다.
+- 재현: `run_planner_only.sh <시나리오> --params experiments/path_planner/config/planner_candidates.yaml --run-mode SIM --repeat 30 --warmup 1`
+- 값은 NavFn A* / NavFn Dijkstra / Smac 2D 순서다.
+
+| 실행 | 경로 길이 (m) | 0.10 m 간격 길이 (m) | 꺾인 각도 합 (도) | 최소 장애물 거리 (m) | 계획 시간 중앙값 (ms) |
+| --- | --- | --- | --- | --- | --- |
+| R1-A:fwd | 6.6 / 6.6 / 6.6 | 6.6 / 6.6 / 6.6 | 0 / 0 / 0 | 0.85 / 0.85 / 0.80 | 0.36 / 0.55 / 0.31 |
+| R1-A:rev | 6.6 / 6.6 / 6.6 | 6.6 / 6.6 / 6.6 | 0 / 0 / 0 | 0.85 / 0.85 / 0.80 | 0.37 / 0.51 / 0.39 |
+| R1-B:fwd | 8.7573 / 8.6559 / **8.2955** | 8.5064 / 8.5069 / 8.2928 | 555 / 540 / 281 | 0.40 / 0.40 / 0.40 | 0.51 / 0.65 / 2.52 |
+| R1-B:rev | 8.5323 / 8.5294 / **8.2808** | 8.4756 / 8.4712 / 8.2779 | 487 / 527 / 267 | 0.40 / 0.40 / 0.40 | 0.95 / 0.78 / 5.17 |
+| R1-C:fwd | 17.5687 / 9.239 / **8.8623** | 15.1083 / 9.0754 / 8.8604 | 887 / 577 / 177 | 0.38 / 0.35 / 0.35 | 1.10 / 0.98 / 3.43 |
+| R1-C:rev | 8.9546 / 9.1211 / **8.607** | 8.9229 / 9.041 / 8.6053 | 339 / 555 / 177 | 0.38 / 0.35 / 0.35 | 1.03 / 0.89 / 5.51 |
+| R1-D1:fwd 차단 전 | 6.6997 / 6.6895 / **6.5103** | 6.5641 / 6.5849 / 6.5101 | 308 / 385 / 60 | 0.45 / 0.45 / 0.45 | 0.34 / 0.40 / 1.47 |
+| R1-D1:rev 차단 전 | 6.5818 / 6.5734 / **6.5098** | 6.5495 / 6.5334 / 6.5096 | 337 / 245 / 67 | 0.45 / 0.45 / 0.45 | 0.50 / 0.68 / 1.76 |
+| R1-D2:fwd 차단 전 | 12.4477 / 12.4395 / **12.156** | 12.2002 / 12.2588 / 12.1548 | 481 / 702 / 195 | 0.45 / 0.45 / 0.45 | 0.50 / 0.87 / 3.73 |
+| R1-D2:rev 차단 전 | 12.2798 / **12.2415** / 12.4038 | 12.2305 / 12.1933 / 12.4023 | 464 / 416 / 201 | 0.45 / 0.45 / 0.45 | 1.00 / 0.73 / 7.13 |
+| R1-D1:fwd 차단 후 | 12.0787 / 10.935 / **10.5959** | 10.8644 / 10.7963 / 10.5934 | 721 / 536 / 280 | 0.40 / 0.40 / 0.40 | 0.50 / 0.74 / 2.67 |
+| R1-D1:rev 차단 후 | 10.8343 / 10.8513 / **10.5873** | 10.7657 / 10.7732 / 10.5844 | 563 / 593 / 286 | 0.35 / 0.40 / 0.40 | 0.95 / 0.71 / 5.76 |
+
+![R1-C fwd 세 후보](results/20261119T075850Z_SIM_lecture_hall_v1/paths_R1-C_fwd.svg)
+
+관찰한 사실 (이 지도·이 설정에 한함):
+
+- 측정 1,440회가 모두 기대와 일치했다. NavFn 두 설정의 값은 앞선 측정과 같았다. 도달 불가·차단(R1-D2 차단 후)은 세 후보 모두 같은 오류(`NO_VALID_PATH`, `GOAL_OUTSIDE_MAP`)로 실패했다.
+- Smac 2D는 NavFn A*처럼 먼 길로 돌지 않았다. R1-C 정방향에서 Dijkstra와 같은 길이었다(두 경로 최대 간격 0.18 m).
+- Smac 2D는 R1-A를 뺀 10개 실행 중 9개에서 경로가 가장 짧았다(Dijkstra보다 0.06~0.51 m). R1-D2 역방향에서는 Dijkstra보다 0.16 m 길었다.
+- Smac 2D 경로에는 잔 지그재그가 없었고(경로 길이와 0.10 m 간격 길이의 차이 0.003 m 이하), 꺾인 각도 합은 NavFn 두 설정 중 작은 쪽의 20~55%였다.
+- 최소 장애물 거리는 세 후보가 0.05 m 안에서 같았다. 평균 장애물 거리는 넓은 구간(R1-D2 차단 전)에서 Smac 2D가 0.64~0.71 m로 NavFn(0.79~0.82 m)보다 작았다.
+- 계획 시간 중앙값은 Smac 2D가 0.31~7.13 ms, NavFn이 0.34~1.10 ms였다. Smac 2D가 대체로 3~7배 걸렸고 최댓값은 10.4 ms였다.
+
+**주행은 아직 재지 않았다.** 세 후보 주행 측정은 90회 중 30회에서 중단했고 결과에 넣지 않았다. 아래 주행 결과와 REPORT의 잠정 권고는 NavFn 두 설정만 비교한 것이다.
 
 ## 측정 결과 — 주행 비교, SIM (Gazebo Harmonic) — [초안-팀합의필요] B의 임시 환경
 

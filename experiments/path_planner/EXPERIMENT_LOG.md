@@ -250,3 +250,77 @@
 - **다음:**
   - Gazebo 실제 위치를 기록하도록 고친다.
   - D의 주행 설정과 공식 지도가 나오면 그 환경에서 다시 잰다.
+
+## 2026-11-19 — `20261119T075850Z_SIM_lecture_hall_v1`, `20261119T075917Z_SIM_lecture_hall_v1_r1d` (세 후보)
+
+- **목적:** NavFn의 `use_astar` 모드가 교과서식 A*와 다르므로, 정확한 우선순위 큐를 쓰는 Smac Planner 2D를 세 번째 후보로 넣어 같은 조건에서 비교한다.
+- **실행 모드:** SIM (planner-only, Gazebo 미사용)
+- **조건:**
+  - 측정 코드 `df2693b`, 설정 `config/planner_candidates.yaml`(NavFn 두 블록과 costmap은 `navfn_compare.yaml`과 같음, Smac2D는 Nav2 기본값에 `tolerance: 0.5`)
+  - 지도·시나리오는 앞선 측정과 같다. 예열 1회 + 30회. 반복마다 세 후보의 순서를 돌려 가며 바꿨다.
+  - 환경: Docker `amr-sim:jazzy`(Nav2 1.3.14, `nav2_smac_planner` 1.3.14), Windows 11 + WSL2. 측정용 이미지에는 Smac 패키지가 없어 이 이미지를 썼다.
+- **이전 실험 대비 바꾼 조건:** 후보 하나 추가, 실행 이미지.
+- **관찰:**
+  - 두 실험 모두 측정 720회가 기대와 일치했다. 모든 지표가 30회 반복에서 같았다. NavFn 두 설정의 경로 길이는 앞선 측정과 같았다.
+  - Smac 2D 경로 길이: R1-B 8.2955 / 8.2808 m, R1-C 8.8623 / 8.607 m, R1-D1 차단 후 10.5959 / 10.5873 m (정 / 역).
+  - R1-C 정방향에서 Smac 2D와 Dijkstra 경로의 최대 간격은 0.18 m였다(NavFn A*는 5.46 m).
+  - Smac 2D의 경로 길이와 0.10 m 간격 길이의 차이는 0.003 m 이하였다. 꺾인 각도 합은 60~286도였다.
+  - Smac 2D의 계획 시간 중앙값은 0.31~7.13 ms, 최댓값은 10.4 ms였다. NavFn은 중앙값 0.34~1.10 ms였다.
+  - R1-D2 역방향에서는 Smac 2D가 12.4038 m로 Dijkstra(12.2415 m)보다 길었다.
+  - 도달 불가·차단 실행은 세 후보 모두 같은 오류로 실패했다.
+- **문제와 원인:** 없음. R1-D2 역방향에서 Smac 2D가 더 긴 이유는 **[미분석]**이다.
+- **다음:** 세 후보 주행 비교.
+
+## 2026-11-19 — 세 후보 주행 측정 (중단, 결과 없음)
+
+- **목적:** Smac 2D를 넣은 세 후보 주행 비교(R1-A~C, R1-D1, 조건별 5회, 150회 예정).
+- **실행 모드:** SIM (Gazebo Harmonic 주행, B의 임시 환경)
+- **조건:** 측정 코드 `df2693b`. 시행마다 ComputePathToPose의 `planner_id`를 고정한 BT 사본으로 플래너를 고르고, Gazebo의 실제 로봇 위치를 기록한다.
+- **이전 실험 대비 바꾼 조건:** 후보 추가, 플래너 선택 방식, 실제 위치 기록.
+- **관찰:** 90회 중 30회에서 사용자 요청으로 멈췄다. 결과 파일은 쓰지 않았고 보고에 쓰지 않는다.
+  시험 주행 1회(R1-C 역방향)에서는 세 후보가 모두 도착했고, 실제 위치 기준 도착 오차는 0.07~0.15 m였다.
+- **문제와 원인:** 없음(중단은 일정 때문).
+- **다음:** 처음부터 다시 측정한다.
+
+## 2026-11-19 — 교차 검증 (A, Ubuntu 24.04 ARM64 UTM) — PR #5 리뷰로 받은 보고
+
+- **목적:** 다른 환경에서 같은 결과가 나오는지 확인한다. 이 항목은 B가 잰 것이 아니라 A(윤현수)가 PR #5 리뷰에 적은 내용을 옮긴 것이다.
+- **실행 모드:** SIM (planner-only)
+- **조건:** PR HEAD `fcb7a48`, Ubuntu 24.04 ARM64(UTM), ROS 2 Jazzy, Nav2 1.3.14. 예열 1회 + 30회.
+- **이전 실험 대비 바꾼 조건:** 실행 환경(x86_64 WSL2 Docker → ARM64 UTM 가상머신).
+- **관찰 (A의 보고):**
+  - 단위 테스트 41건 통과.
+  - 기본 비교 480/480, R1-D 480/480이 기대와 일치했다. 성공·실패 건수와 실패 사유가 저장소 기록과 같았고, 평균 계획 경로 길이는 0.0001 m까지 같았다.
+  - R1-D의 한 실행에서는 측정 80건과 예열 8건이 `GOAL_REJECTED`로 기록됐다. 서버 로그에 `Action server is inactive. Rejecting the goal.`이 있었다. 이 실행은 비교에서 제외했다.
+- **문제와 원인:** `ComputePathToPose` 서버는 `planner_server`가 `active`가 되기 전에도 검색된다. 측정 스크립트는 서버 검색만 기다렸기 때문에, 활성화가 늦은 환경에서는 측정이 먼저 시작됐다.
+  B의 PC에서는 한 번도 나타나지 않았던 문제다.
+- **다음:** 첫 예열 전에 lifecycle `active`를 확인하도록 고친다.
+
+## 2026-11-20 — 시작 경합 재현 시험 (결과 보관 안 함)
+
+- **목적:** 위 문제를 재현하고, 고친 스크립트가 막는지 확인한다.
+- **실행 모드:** SIM (planner-only, Gazebo 미사용)
+- **조건:** 커밋 전 작업 트리(`acd8b7b`와 같은 내용), Docker `amr-path-planner-bench:jazzy`. lifecycle manager 없이 `map_server`는 `active`, `planner_server`는 `inactive`(configure만)로 만들었다.
+- **이전 실험 대비 바꾼 조건:** 노드 상태를 손으로 만들었다.
+- **관찰:**
+  - `planner_server`가 `inactive`인 채로 두면 스크립트가 8 s 뒤 "`/planner_server is not active ... (last state: inactive [2])`"로 끝났다. 결과 폴더는 없었고 `planner_server`가 거절한 요청도 0건이었다.
+  - 스크립트 시작 5 s 뒤에 `planner_server`를 활성화하면, 스크립트가 기다렸다가 측정했다. 48건이 모두 기대와 일치했고 `GOAL_REJECTED`는 0건이었다. `meta.json`에 확인한 상태가 남았다.
+- **문제와 원인:** 없음.
+- **다음:** R1-D를 다시 측정한다.
+
+## 2026-11-20 — `20261120T002730Z_SIM_lecture_hall_v1_r1d`
+
+- **목적:** lifecycle 확인을 넣은 코드로 R1-D를 다시 측정한다(PR #5 리뷰 요청).
+- **실행 모드:** SIM (planner-only, Gazebo 미사용)
+- **조건:**
+  - 측정 코드 `acd8b7b`
+  - 버전: `navfn_compare@b6b5e3a1039a`, `lecture_hall_real@4995e81c1fb1`, 차단 지도 `+R1-D1@c254d94b7898`·`+R1-D2@07dc060afa8c`, `lecture_hall_v1_r1d@a663bec775cf`
+  - 환경: Docker `amr-path-planner-bench:jazzy` (ROS 2 Jazzy, Nav2 1.3.14), Windows 11 + WSL2. 예열 1회 + 30회.
+- **이전 실험 대비 바꾼 조건:** 측정 전에 `map_server`·`planner_server`의 `active`를 확인한다. 요청·설정·지도·시나리오는 같다.
+- **관찰:**
+  - 측정 480회가 모두 기대와 일치했다. `GOAL_REJECTED`는 없었다.
+  - 경로 길이는 `20261119T012513Z`·`20261119T015502Z`와 소수 넷째 자리까지 같았다(R1-D1 차단 후 정방향 A* 12.0787 / Dijkstra 10.935 m).
+  - R1-D2 차단 후는 두 설정 모두 0/30, `NO_VALID_PATH`였다.
+  - `meta.json`의 `lifecycle_before_measuring`에 두 노드가 `active [3]`으로 기록됐다.
+- **문제와 원인:** 없음.
+- **다음:** PR #5에 올리고 A에게 재확인을 요청한다.

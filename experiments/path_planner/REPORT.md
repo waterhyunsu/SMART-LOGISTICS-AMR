@@ -15,6 +15,7 @@
 | --- | --- | --- |
 | A* | Nav2 Jazzy NavFn (`nav2_navfn_planner::NavfnPlanner`) | `use_astar: true` (`NavFnAStar`) |
 | Dijkstra | 같은 플러그인 | `use_astar: false` (`NavFnDijkstra`) |
+| Smac 2D (추가 후보, **[초안-팀합의필요]**) | Nav2 Jazzy Smac Planner 2D (`nav2_smac_planner::SmacPlanner2D`) | Nav2 기본값, `tolerance: 0.5`만 NavFn과 맞춤 (`Smac2D`, [`config/planner_candidates.yaml`](config/planner_candidates.yaml)) |
 
 두 후보는 `use_astar` 외 설정이 모두 같다 ([`config/navfn_compare.yaml`](config/navfn_compare.yaml)). 잠정 권고와 근거는 §6·§7에 있다.
 
@@ -73,6 +74,8 @@ NavFn 내용은 Nav2 Jazzy 소스 기준이다:
 | --- | --- | --- | --- | --- |
 | `20261118T061956Z_SIM_lecture_hall_v1` | 2026-11-18 | SIM (planner-only) | 예열 1 + 30 | [summary.md](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md), 요약표는 [README "측정 결과"](README.md#측정-결과--sim-planner-only) |
 | `20261119T012513Z_SIM_lecture_hall_v1_r1d` | 2026-11-19 | SIM (planner-only) | 예열 1 + 30 | [summary.md](results/20261119T012513Z_SIM_lecture_hall_v1_r1d/summary.md), 요약표는 [README "R1-D 경로 차단"](README.md#측정-결과--r1-d-경로-차단-sim-planner-only) |
+| `20261119T075850Z_SIM_lecture_hall_v1`, `20261119T075917Z_SIM_lecture_hall_v1_r1d` | 2026-11-19 | SIM (planner-only), 세 후보 | 예열 1 + 30 | [README "세 후보 계획 비교"](README.md#측정-결과--세-후보-계획-비교-sim-planner-only--후보-확장은-초안-팀합의필요) |
+| `20261120T002730Z_SIM_lecture_hall_v1_r1d` | 2026-11-20 | SIM (planner-only), lifecycle 확인 후 R1-D 재측정 | 예열 1 + 30 | [summary.md](results/20261120T002730Z_SIM_lecture_hall_v1_r1d/summary.md). 480/480 일치, 경로 길이는 앞선 R1-D 측정과 같다 |
 
 **R1-A~C, 도달 불가** (`20261118T061956Z`)
 
@@ -161,11 +164,20 @@ NavFn 내용은 Nav2 Jazzy 소스 기준이다:
 - 실패 응답의 시간: `planning_time`이 없어 `roundtrip_time`만 남는다. 그런데 `roundtrip_time`은 같은 실행 안에서 요청이 쌓일수록 커졌다
   (첫 실험 반복 0 → 30: 7.2 → 18.1 ms, R1-D 차단 전 묶음: 14.3 → 23.5 ms. 원인 **[미분석]**). 그래서 실패를 얼마나 빨리 알리는지는 이 측정으로 비교하지 않는다.
 
+- **세 후보 계획 비교로 확인한 것 (2026-11-19):** Smac Planner 2D는 같은 조건에서 먼 길로 돌지 않았고 잔 지그재그도 없었다.
+  10개 실행 중 9개에서 경로가 가장 짧았고 꺾인 각도 합은 NavFn의 20~55%였다. 계획 시간은 3~7배(최대 10.4 ms)였다.
+  NavFn A*에서 본 문제는 A* 알고리즘이 아니라 NavFn의 `use_astar` 구현에서 나온다는 §2.1의 설명과 맞는 결과다. 주행에서는 아직 확인하지 않았다.
+- **교차 검증 (A, PR #5 리뷰):** Ubuntu 24.04 ARM64(UTM) + Nav2 1.3.14에서 기본 비교 480/480과 R1-D 480/480이 재현됐고, 평균 계획 경로 길이가 0.0001 m까지 같았다.
+  그 과정에서 `planner_server`가 `inactive`일 때 측정이 시작돼 88건이 `GOAL_REJECTED`로 기록된 실행이 한 번 있었다.
+  원인은 측정 스크립트가 Action 서버 검색만 확인하고 lifecycle 활성화를 기다리지 않은 것이다. `active` 확인을 넣어 고쳤다(`acd8b7b`).
+
 ## 6. 최종 선정 기술
 
 **최종 선정은 미정이다 (P-009 VERIFY).** 아래는 지금까지의 측정에 근거한 B의 **잠정 권고**이고, D의 검증과 A의 승인을 거쳐야 확정된다.
 
 > **잠정 권고: NavFn Dijkstra** — `nav2_navfn_planner::NavfnPlanner`, `use_astar: false`, `tolerance: 0.5`, `allow_unknown: true` (Nav2 기본값과 같다)
+>
+> 이 권고는 NavFn 두 설정만 비교해 쓴 것이다. 이후 추가한 Smac Planner 2D는 계획 비교에서 Dijkstra보다 경로가 짧고 매끄러웠다(§5). Smac 2D의 주행 비교는 아직 하지 않았으므로, 그 결과가 나오면 이 권고를 다시 검토한다.
 
 ## 7. 선택 근거
 
@@ -224,7 +236,8 @@ A*가 유리했던 항목은 없었다. 이론상 A*의 장점인 탐색량 감�
 | 실차(REAL) 결과가 없다 | C·D와 조율해 조건별 5회 이상 실차 시험을 한다 |
 | 계획 시간은 WSL2 + Docker 환경의 값이다 | 같은 세션 안에서만 비교한다. 실차 PC에서 다시 잰다 |
 | `roundtrip_time`이 같은 실행 안에서 요청이 쌓일수록 커진다 (원인 미분석) | 알고리즘 비교에는 `planning_time`만 쓴다. 원인(클라이언트 또는 planner_server)을 확인한다. C의 비용표 계산처럼 요청을 많이 보내는 경우에도 해당할 수 있어 C에 공유한다 |
-| 다른 환경(네이티브 Ubuntu, Mac VM)에서 교차 실행하지 않았다 | 팀원 환경에서 같은 명령으로 경로 길이 일치를 확인한다 |
+| 교차 실행은 1건(A의 Ubuntu 24.04 ARM64 UTM)이고, 경로 품질·세 후보·주행 측정은 교차 확인하지 않았다 | 다른 팀원 환경에서도 같은 명령으로 확인한다 |
+| Smac Planner 2D는 계획 비교만 했다 | 세 후보 주행 비교를 다시 측정하고 §6의 권고를 재검토한다 |
 | NavFn 두 모드만 비교했다. 정석 A*와의 차이는 소스 분석뿐이다 (§2.1) | 정석에 가까운 A*인 Smac Planner 2D를 같은 조건으로 추가 비교할지 검토한다 |
 | 장애물 거리는 칸 단위(0.05 m) 정확도이고 정적 지도의 점유 칸 기준이다 | 실차에서는 실제 장애물까지의 거리를 따로 본다 |
 | `planned_distance`에 잔 지그재그가 들어가 같은 길도 플래너에 따라 1 m 넘게 다르다 | C와 비용표 거리 계산 방식을 상의한다. 주행 비교에서 실제 주행 거리 차이를 확인한다 |
