@@ -1,0 +1,18 @@
+{
+  "mode": "nav2plan",
+  "world": "lecture_hall_real",
+  "map": "/app/experiments/r1/maps/lecture_hall_real.yaml",
+  "map_image": "/app/experiments/r1/maps/lecture_hall_real.pgm",
+  "config_version": "2aa5aa21-n5420e8-m5249d1",
+  "planners": {
+    "astar": "SmacLattice",
+    "dijkstra": "Dijkstra"
+  },
+  "nav2_params": "experiments/r1/nav2/nav2_r1.yaml",
+  "repeat": 30,
+  "random": 200,
+  "seed": 1,
+  "host": "50dccf9e07e6",
+  "started": "20261118-023856_nav2plan-smaclattice_lecture_hall_real",
+  "rows": 1680
+}

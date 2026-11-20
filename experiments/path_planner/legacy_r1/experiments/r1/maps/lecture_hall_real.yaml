@@ -1,0 +1,9 @@
+# world: lecture_hall_real
+# made by tools/world_to_map.py from worlds/lecture_hall_real.world (scan height z=0.17 m, seed 0.0 0.0)
+image: lecture_hall_real.pgm
+mode: trinary
+resolution: 0.05
+origin: [-2.450, -1.050, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

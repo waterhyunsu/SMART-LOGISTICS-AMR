@@ -1,0 +1,58 @@
+# B 연구 1 — 고정 출발/목표 쌍 (run_compare.py 가 읽는다)
+#
+# [초안-팀합의필요] 임시 비교 지도: D 의 공식 지도와 HOME·A~D 지점(P-014, C·D 담당)이 정해지기 전까지 쓴다.
+#   지도는 legacy_r1 의 강의실 복제 월드 맵(world_to_map.py 로 생성, Humble 연구와 같은 파일)이다.
+#   공식 지도가 나오면 이 파일을 고치지 말고 새 시나리오 파일(<지도>_v1.yaml)을 추가한다.
+#
+# points.<이름>: [x (m), y (m), yaw (deg)] — frame_id 좌표계. 출발 Pose 는 use_start: true 로 그대로 쓴다.
+# pairs[].reverse: true 면 반대 방향(to → from)을 별도 실행으로 만든다 (INTERFACES §8.4: A→B, B→A 별도).
+# pairs[].expect: success | failure — 기대 결과. 실제 결과와 다르면 trials.csv 의 expectation_met = false.
+
+scenario_set: lecture_hall_v1
+map:
+  name: lecture_hall_real
+  yaml: ../legacy_r1/experiments/r1/maps/lecture_hall_real.yaml   # 이 파일 기준 상대 경로
+  frame_id: map
+
+points:
+  home:         [0.0, 0.0, 90]      # 뒤쪽 가로 복도 x 세로 복도 2
+  back_left:    [-1.2, 0.0, 0]
+  back_mid:     [1.15, 0.0, 90]     # 좌석 2열 바로 뒤
+  front_mid:    [1.15, 6.5, 0]      # 좌석 2열 바로 앞
+  aisle4_mid:   [4.6, 3.3, 90]      # 세로 복도 4 가운데 (폭 0.9 m)
+  stage_left:   [-1.0, 7.9, 0]
+  stage_right:  [5.6, 7.9, 180]
+  outside_west: [-2.35, 4.0, 0]     # 서쪽 벽 바깥 unknown 영역: 지도 안이지만 닫힌 벽으로 막힘
+  off_map_east: [8.0, 4.0, 180]     # 지도 범위(x ≤ 7.05 m) 밖
+
+pairs:
+  - id: R1-A
+    name: 개방 경로
+    from: stage_left
+    to: stage_right
+    reverse: true
+    expect: success
+  - id: R1-B
+    name: 장애물 우회
+    from: back_mid
+    to: front_mid
+    reverse: true
+    expect: success
+  - id: R1-C
+    name: 좁은 통로·갈림길
+    from: back_left
+    to: aisle4_mid
+    reverse: true
+    expect: success
+  - id: FAIL-WALLED
+    name: 도달 불가 (벽으로 막힌 영역)
+    from: home
+    to: outside_west
+    reverse: false
+    expect: failure
+  - id: FAIL-OFFMAP
+    name: 도달 불가 (지도 밖 목표)
+    from: home
+    to: off_map_east
+    reverse: false
+    expect: failure
