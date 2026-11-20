@@ -1,0 +1,26 @@
+{
+  "sim_command": [
+    "ros2",
+    "launch",
+    "nav2_bringup",
+    "tb3_simulation_launch.py",
+    "map:={map_yaml}",
+    "world:={config_dir}/replace-with-team-world.sdf.xacro",
+    "params_file:={config_dir}/replace-with-team-nav2-params.yaml",
+    "headless:=True",
+    "use_rviz:=False",
+    "use_sim_time:=True"
+  ],
+  "d_command": null,
+  "map_yaml": "replace-with-team-map.yaml",
+  "ros_domain_id": 94,
+  "initial_pose": [null, null, null],
+  "waypoint": {
+    "id": "REPLACE_WITH_TEAM_WAYPOINT",
+    "pose": [null, null, null]
+  },
+  "base_frame": "base_link",
+  "tolerance_m": 0.25,
+  "startup_timeout_sec": 90,
+  "goal_timeout_sec": 120
+}

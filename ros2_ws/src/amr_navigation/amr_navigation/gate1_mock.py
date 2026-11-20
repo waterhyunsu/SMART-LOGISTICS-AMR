@@ -329,6 +329,7 @@ class DNavigationNode(Node):
             fault_result_error=lambda: bool(self.get_parameter('fault_result_error').value))
         self.contexts = {}        # nav_goal_id -> GoalContext
         self.attempts = {}        # attempt_id -> nav_goal_id
+        self.refused_before_send = set()
         self.sent_count = 0
         self.event_seq = 0
         self.outbox = []          # 아직 A가 응답하지 않은 ReportGoalEvent 요청
@@ -344,9 +345,6 @@ class DNavigationNode(Node):
                    'CANCELED': 5, 'REJECTED': 6, 'UNCERTAIN': 7}
     EVENT_CODES = {'ACCEPTED': 1, 'REJECTED': 2, 'SUCCEEDED': 3, 'ABORTED': 4,
                    'CANCELED': 5, 'UNCERTAIN': 6}
-    OBS_CODES = {'ARRIVED': 1, 'NOT_ARRIVED': 2, 'NO_ACTIVE_GOAL': 3, 'UNKNOWN': 4,
-                 'DISCONNECTED': 5, 'TIMEOUT': 6}
-
     # ---------- dispatch_goal ----------
     def on_dispatch(self, req, res):
         D = self.DispatchGoal.Response
@@ -364,12 +362,14 @@ class DNavigationNode(Node):
         elif ctx.attempt_id in self.attempts:
             res.result, res.reason = D.RESULT_CONFLICT, 'same attempt_id with different nav_goal_id'
         else:
+            # Keep pre-send refusals so a delayed copy cannot start the old attempt.
+            self.contexts[gid] = ctx
+            self.attempts[ctx.attempt_id] = gid
             ok, why = self.disp.ready_for(ctx)
             if not ok:
+                self.refused_before_send.add(gid)
                 res.result, res.reason = D.RESULT_NOT_READY, why
             else:
-                self.contexts[gid] = ctx
-                self.attempts[ctx.attempt_id] = gid
                 res.result, res.reason = D.RESULT_ACCEPTED, 'received; Nav2 send started'
                 try:
                     if self.disp.send(SimpleTicket(ctx, gid)):
@@ -392,14 +392,21 @@ class DNavigationNode(Node):
         res.check_id = req.check_id
         stored = self.contexts.get(ctx.nav_goal_id)
         if stored is not None and stored != ctx:
-            obs, nop, detail = NavigationObservation.UNKNOWN, False, 'context mismatch'
+            obs, nop, detail = 'UNKNOWN', False, 'context mismatch'
+        elif ctx.nav_goal_id in self.refused_before_send:
+            ready, why = self.disp.ready_for(ctx)
+            if ready:
+                obs, nop, detail = 'REFUSED_BEFORE_SEND', True, 'prior request refused; Nav2 ready'
+            else:
+                obs, nop, detail = 'UNKNOWN', False, why
         else:
-            obs, nop, detail = self.disp.inspect(ctx.nav_goal_id)
-        res.observation = self.OBS_CODES[obs.name]
-        res.no_pending_dispatch = bool(nop)
+            observation, nop, detail = self.disp.inspect(ctx.nav_goal_id)
+            obs = observation.name
+        res.observation = getattr(self.LookupGoal.Response, f'OBS_{obs}')
+        res.no_pending_dispatch = nop
         res.detail = detail
         self.get_logger().info(
-            f'[lookup_goal] check={req.check_id[:8]} {ctx.nav_goal_id} → {obs.name}, '
+            f'[lookup_goal] check={req.check_id[:8]} {ctx.nav_goal_id} → {obs}, '
             f'no_pending_dispatch={nop} ({detail})')
         return res
 
