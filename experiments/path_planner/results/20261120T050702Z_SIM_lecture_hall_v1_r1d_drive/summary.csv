@@ -1,0 +1,13 @@
+scenario_id,pair_id,direction,map_variant,expected,algorithm,trials,goal_successes,success_rate,expectation_met,execution_time_mean,execution_time_std,execution_time_min,execution_time_max,actual_distance_mean,actual_distance_std,planned_distance_mean,recoveries_mean,recoveries_max,final_error_max,failure_reasons,true_final_error_mean,true_final_error_max
+R1-D1:fwd,R1-D1,fwd,,success,astar,5,5,100.0,5,23.0,0.16,22.8,23.19,6.55,0.055,6.719,0.0,0.0,0.137,,0.051,0.167
+R1-D1:fwd,R1-D1,fwd,,success,dijkstra,5,5,100.0,5,23.05,0.23,22.7,23.38,6.513,0.046,6.667,0.0,0.0,0.099,,0.05,0.089
+R1-D1:fwd,R1-D1,fwd,,success,smac2d,5,5,100.0,5,23.06,0.22,22.85,23.38,6.511,0.045,6.552,0.0,0.0,0.173,,0.059,0.092
+R1-D1:rev,R1-D1,rev,,success,astar,5,5,100.0,5,33.89,2.99,30.66,38.87,6.826,0.115,6.603,0.0,0.0,1.405,,0.048,0.083
+R1-D1:rev,R1-D1,rev,,success,dijkstra,5,5,100.0,5,46.18,18.05,31.51,78.32,6.914,0.128,6.585,1.6,5.0,1.325,,0.055,0.084
+R1-D1:rev,R1-D1,rev,,success,smac2d,5,5,100.0,5,32.71,0.8,31.54,33.81,6.873,0.05,6.488,0.0,0.0,1.113,,0.101,0.227
+R1-D1:fwd:blocked,R1-D1,fwd,R1-D1,success,astar,5,4,80.0,4,68.52,17.36,50.98,86.93,12.933,0.315,6.736,9.2,23.0,0.549,NAV_STATUS_6_CODE_104,0.043,0.069
+R1-D1:fwd:blocked,R1-D1,fwd,R1-D1,success,dijkstra,5,4,80.0,4,68.73,20.4,50.91,101.07,13.081,1.082,6.66,7.4,18.0,0.913,NAV_STATUS_6_CODE_208,0.053,0.072
+R1-D1:fwd:blocked,R1-D1,fwd,R1-D1,success,smac2d,5,4,80.0,4,54.8,2.63,50.58,57.51,12.483,0.176,6.562,2.6,6.0,0.737,NAV_STATUS_6_CODE_0,0.051,0.085
+R1-D1:rev:blocked,R1-D1,rev,R1-D1,success,astar,5,5,100.0,5,60.3,6.46,53.58,70.68,12.705,0.769,6.635,3.6,7.0,2.077,,0.128,0.227
+R1-D1:rev:blocked,R1-D1,rev,R1-D1,success,dijkstra,5,4,80.0,4,63.99,14.04,52.77,87.48,12.301,0.146,6.585,8.2,24.0,1.989,NAV_STATUS_6_CODE_208,0.153,0.285
+R1-D1:rev:blocked,R1-D1,rev,R1-D1,success,smac2d,5,2,40.0,2,85.52,29.36,56.16,114.87,12.982,0.526,6.509,2.6,9.0,2.919,NAV_STATUS_6_CODE_205,0.176,0.221

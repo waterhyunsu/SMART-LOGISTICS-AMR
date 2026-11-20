@@ -324,3 +324,19 @@
   - `meta.json`의 `lifecycle_before_measuring`에 두 노드가 `active [3]`으로 기록됐다.
 - **문제와 원인:** 없음.
 - **다음:** PR #5에 올리고 A에게 재확인을 요청한다.
+
+## 2026-11-20 — `20261120T023640Z_SIM_lecture_hall_v1_drive`, `20261120T050702Z_SIM_lecture_hall_v1_r1d_drive`
+
+- **목적:** Smac Planner 2D를 넣은 세 후보로 주행 비교를 한다(2026-11-19에 30/90에서 중단한 측정을 처음부터 다시 함).
+- **실행 모드:** SIM (Gazebo Harmonic 주행) — [초안-팀합의필요] B의 임시 환경
+- **조건:**
+  - 측정 코드 `acd8b7b`, `nav2_drive@6d41440b0a66`, `lecture_hall_real@4995e81c1fb1`
+  - 환경: Docker `amr-sim:jazzy` (ROS 2 Jazzy, Nav2 1.3.14, Gazebo 8.15.0), Windows 11 + WSL2. 조건별 5회, 합계 150회.
+- **이전 실험 대비 바꾼 조건:** 후보가 2개에서 3개가 됐다. 측정 전에 lifecycle `active`를 확인한다. 월드·주행 설정·시나리오는 같다.
+- **관찰:**
+  - 도착: A* 46/50, Dijkstra 46/50, Smac 2D 43/50. 복구 동작 합계 227 / 177 / 37회.
+  - Smac 2D 실패 7건 중 6건이 `START_OCCUPIED`(205)였다(R1-B 역방향 3, R1-D1 차단 후 역방향 3).
+  - Dijkstra는 R1-C 정방향 5회 중 1회 첫 계획이 15.4 m였다. 이전 주행 측정에서는 10회 모두 9 m 안팎이었다.
+  - R1-B 역방향에서 실패 6건이 나왔다(세 후보 모두).
+- **문제와 원인:** 측정 중 PC의 여유 메모리가 1 GB 아래로 내려갔다. 주행에 준 영향은 확인하지 않았다.
+- **다음:** 잠정 권고(NavFn Dijkstra)는 유지한다. Smac 2D의 `START_OCCUPIED`를 D의 설정에서 확인한다.

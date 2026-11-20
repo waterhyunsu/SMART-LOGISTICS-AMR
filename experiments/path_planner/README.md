@@ -10,7 +10,7 @@
 | B 가이드 첫 번째 기능: 재현 가능한 비교 조건 | 구현함. 고정 출발/목표 쌍, 실패 사례, 설정 쌍, 실행 스크립트, 결과 기록 |
 | MOCK | `tests/` 73개 통과 (가짜 플래너, 경로 차단·경로 품질·주행 결과 처리·그래프·세 후보·lifecycle 대기 포함) |
 | SIM (planner-only) | Jazzy Docker에서 측정: R1-A~C·도달 불가 [`results/20261118T061956Z_SIM_lecture_hall_v1`](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md), R1-D 경로 차단 [`results/20261119T012513Z_SIM_lecture_hall_v1_r1d`](results/20261119T012513Z_SIM_lecture_hall_v1_r1d/summary.md), 경로 품질 지표와 경로 그림을 넣은 재측정 [`20261119T015445Z`](results/20261119T015445Z_SIM_lecture_hall_v1/summary.md)·[`20261119T015502Z`](results/20261119T015502Z_SIM_lecture_hall_v1_r1d/summary.md), **세 후보(Smac 2D 포함)** [`20261119T075850Z`](results/20261119T075850Z_SIM_lecture_hall_v1/summary.md)·[`20261119T075917Z`](results/20261119T075917Z_SIM_lecture_hall_v1_r1d/summary.md), lifecycle 확인을 넣은 R1-D 재측정 [`20261120T002730Z`](results/20261120T002730Z_SIM_lecture_hall_v1_r1d/summary.md). A가 Ubuntu 24.04 ARM64(UTM)에서 교차 실행해 같은 결과를 재현했다(PR #5 리뷰) |
-| SIM (Gazebo Harmonic 주행) | **B의 임시 환경**에서 측정: R1-A~C [`20261119T060115Z`](results/20261119T060115Z_SIM_lecture_hall_v1_drive/summary.md), R1-D1 [`20261119T044830Z`](results/20261119T044830Z_SIM_lecture_hall_v1_r1d_drive/summary.md). D의 주행 설정·공식 지도에서는 미측정. Smac 2D를 넣은 세 후보 주행은 **미측정**(측정 중단, 재측정 예정) |
+| SIM (Gazebo Harmonic 주행) | **B의 임시 환경**에서 측정: R1-A~C [`20261119T060115Z`](results/20261119T060115Z_SIM_lecture_hall_v1_drive/summary.md), R1-D1 [`20261119T044830Z`](results/20261119T044830Z_SIM_lecture_hall_v1_r1d_drive/summary.md). D의 주행 설정·공식 지도에서는 미측정. Smac 2D를 넣은 세 후보 주행: R1-A~C [`20261120T023640Z`](results/20261120T023640Z_SIM_lecture_hall_v1_drive/summary.md), R1-D1 [`20261120T050702Z`](results/20261120T050702Z_SIM_lecture_hall_v1_r1d_drive/summary.md) |
 | REAL (실차) | 미측정 |
 | 지도 | **[초안-팀합의필요]** legacy 강의실 복제 맵을 임시로 사용. D의 공식 지도·HOME·A~D 지점(P-014) 확정 전 |
 | 전역 플래너 최종 선정 (P-009) | VERIFY. B의 잠정 권고는 [`REPORT.md`](REPORT.md) §6에 있다. 확정은 D 검증과 A 승인 뒤다 |
@@ -318,7 +318,49 @@ NavFn의 `use_astar` 모드는 교과서식 A*와 구현이 다르다([REPORT §
 - 최소 장애물 거리는 세 후보가 0.05 m 안에서 같았다. 평균 장애물 거리는 넓은 구간(R1-D2 차단 전)에서 Smac 2D가 0.64~0.71 m로 NavFn(0.79~0.82 m)보다 작았다.
 - 계획 시간 중앙값은 Smac 2D가 0.31~7.13 ms, NavFn이 0.34~1.10 ms였다. Smac 2D가 대체로 3~7배 걸렸고 최댓값은 10.4 ms였다.
 
-**주행은 아직 재지 않았다.** 세 후보 주행 측정은 90회 중 30회에서 중단했고 결과에 넣지 않았다. 아래 주행 결과와 REPORT의 잠정 권고는 NavFn 두 설정만 비교한 것이다.
+세 후보의 주행 결과는 바로 아래 절에 있다.
+
+## 측정 결과 — 세 후보 주행 비교, SIM (Gazebo Harmonic) — [초안-팀합의필요] B의 임시 환경
+
+실험 [`20261120T023640Z_SIM_lecture_hall_v1_drive`](results/20261120T023640Z_SIM_lecture_hall_v1_drive/summary.md)(R1-A~C, 90회)와
+[`20261120T050702Z_SIM_lecture_hall_v1_r1d_drive`](results/20261120T050702Z_SIM_lecture_hall_v1_r1d_drive/summary.md)(R1-D1, 60회). 측정 코드 `acd8b7b`.
+
+- 환경·월드·주행 설정은 아래 NavFn 두 설정 주행 비교와 같고, 후보에 Smac Planner 2D가 더해졌다(`nav2_drive@6d41440b0a66`). **D의 배포 설정이 아니다.**
+- 조건별 5회, 후보별 50회. 값은 NavFn A* / NavFn Dijkstra / Smac 2D 순서다. 시간·거리는 도착한 시행의 평균이다.
+
+| 항목 | NavFn A* | NavFn Dijkstra | Smac 2D |
+| --- | --- | --- | --- |
+| 도착 (R1-A~C, 30회) | 27 | 28 | 27 |
+| 도착 (R1-D1, 20회) | 19 | 18 | 16 |
+| **도착 합계 (50회)** | **46** | **46** | **43** |
+| 복구 동작 합계 (150회 중 후보별 50회) | 227 | 177 | 37 |
+| R1-C 정방향: 주행 시간 (s) / 실제 주행 거리 (m) | 63.3 / 14.19 (3/5 도착) | 37.4 / 10.16 | 31.2 / 8.85 |
+| R1-C 역방향: 주행 시간 (s) / 실제 주행 거리 (m) | 68.8 / 15.32 | 43.1 / 9.20 | 41.4 / 9.07 |
+| R1-D1 차단 후 정방향: 주행 시간 (s) / 거리 (m) | 68.5 / 12.93 (4/5) | 68.7 / 13.08 (4/5) | 54.8 / 12.48 (4/5) |
+| R1-D1 차단 후 역방향: 주행 시간 (s) / 거리 (m) | 60.3 / 12.71 (5/5) | 64.0 / 12.30 (4/5) | 85.5 / 12.98 (2/5) |
+
+실패 15건의 사유 (Nav2 오류 코드):
+
+| 후보 | 실패 | 사유 |
+| --- | --- | --- |
+| NavFn A* | 4 | `NO_VALID_PATH`(208) 2건(R1-C 정방향), controller `PATIENCE_EXCEEDED`(104) 2건(R1-B 역방향, R1-D1 차단 후 정방향) |
+| NavFn Dijkstra | 4 | `NO_VALID_PATH`(208) 3건(R1-B 역방향 1, R1-D1 차단 후 2), 시간 초과 1건(R1-B 역방향) |
+| Smac 2D | 7 | `START_OCCUPIED`(205) 6건(R1-B 역방향 3, R1-D1 차단 후 역방향 3), 오류 코드 없는 중단 1건(R1-D1 차단 후 정방향) |
+
+관찰한 사실 (이 월드·이 주행 설정·조건별 5회에 한함):
+
+- **Smac 2D는 도착한 주행이 가장 매끄러웠다.** 복구 동작이 NavFn 두 설정의 1/5~1/6이었고, 좁은 통로(R1-C)에서 10회 모두 9 m 안팎의 같은 길로 갔다.
+- **Smac 2D는 도착 횟수가 가장 적었다.** 실패 7건 중 6건이 `START_OCCUPIED`다. 주행 중 로봇이 costmap에서 장애물로 잡힌 칸 위에 있을 때 Smac 2D는 계획을 거부했고 주행이 중단됐다. 같은 쌍에서 NavFn 두 설정은 이 오류를 내지 않았다.
+- **NavFn A*는 좁은 통로에서 다시 먼 길로 갔다.** R1-C 양방향에서 주행 거리 14~15 m였고 정방향은 2회 `NO_VALID_PATH`로 실패했다. 2026-11-19 측정과 같은 경향이다.
+- **NavFn Dijkstra는 이번에 46/50이었다**(2026-11-19 측정은 50/50). R1-C 정방향 5회 중 1회는 첫 계획이 15.4 m인 먼 길이었다(나머지 4회는 9.24 m).
+- R1-B 역방향은 세 후보 모두 불안정했다(도착 4/5, 3/5, 2/5). 실패 15건 중 6건이 이 쌍에서 나왔다.
+- 개방 경로(R1-A)와 R1-D1 차단 전은 세 후보가 모두 도착했고 시간·거리 차이가 작았다.
+
+주의할 점:
+
+- 조건별 5회라 도착 횟수 1~2건 차이는 후보의 차이라고 단정할 수 없다. 같은 조건의 두 번째 측정에서 Dijkstra의 도착이 50/50에서 46/50으로 달라진 것이 그 예다.
+- 측정하는 동안 PC의 여유 메모리가 1 GB 아래로 내려갔다. 시뮬레이션 시간 기준이라 값에 직접 들어가지는 않지만, 실시간 배율 저하가 주행에 준 영향은 확인하지 않았다.
+- `START_OCCUPIED`는 로봇 반경·inflation·주행 설정에 달려 있다. D의 설정에서는 달라질 수 있다.
 
 ## 측정 결과 — 주행 비교, SIM (Gazebo Harmonic) — [초안-팀합의필요] B의 임시 환경
 
@@ -389,7 +431,7 @@ NavFn의 `use_astar` 모드는 교과서식 A*와 구현이 다르다([REPORT §
 ## 다음 작업 후보
 
 1. D의 공식 지도와 HOME·A~D 지점이 나오면 `scenarios/<지도>_v1.yaml`을 추가하고, 방향별 쌍과 경로 차단을 다시 측정한다.
-2. A* 모드가 다른 길을 고르거나 주행 중 길을 바꾸는 원인, 잔 지그재그의 원인을 확인한다(포텐셜 배열 비교).
+2. Smac 2D의 `START_OCCUPIED` 실패가 D의 로봇 반경·inflation 설정에서도 나오는지 확인한다.
 3. D의 Nav2 설정과 공식 지도에서 주행 비교를 다시 하고(Gazebo 실제 위치 기록 추가, 경로가 완전히 막힌 R1-D2 포함), 이어서 실차 검증(REAL)을 한다.
 4. 팀원 환경(네이티브 Ubuntu 또는 Mac VM)에서 같은 명령을 실행해 경로 길이가 일치하는지 교차 확인한다.
 5. [`REPORT.md`](REPORT.md)의 잠정 권고와 근거를 A·D에게 제출해 P-009 검토를 요청한다.
