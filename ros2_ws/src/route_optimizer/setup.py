@@ -16,5 +16,6 @@ setup(
     maintainer_email='waterhyunsu@gmail.com',
     description='Route cost and visit order calculation.',
     license='TODO',
+    entry_points={'console_scripts': ['route_optimizer = route_optimizer.node:main']},
     tests_require=['pytest'],
 )

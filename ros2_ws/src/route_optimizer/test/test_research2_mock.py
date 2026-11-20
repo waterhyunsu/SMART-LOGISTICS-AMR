@@ -1,89 +1,31 @@
-from itertools import permutations, pairwise
-from unittest.mock import patch
 import unittest
+from unittest.mock import patch
 
+from route_optimizer import planner
+from route_optimizer.mock_costs import COST
 
-WAYPOINTS = ("HOME", "A", "B", "C", "D")
-COST_ROWS = (
-    (0, 3, 6, 8, 9),
-    (4, 0, 2, 5, 6),
-    (6, 3, 0, 2, 4),
-    (5, 4, 3, 0, 2),
-    (7, 6, 3, 4, 0),
-)
-COST = {
-    (start, end): distance
-    for start, row in zip(WAYPOINTS, COST_ROWS)
-    for end, distance in zip(WAYPOINTS, row)
-}
 
 # 딕셔너리에 적힌 순서를 작업 등록 순서로 사용합니다.
 STEP_WAYPOINT = {"S1": "A", "S2": "C", "S3": "B", "S4": "D"}
 PREREQUISITES = {"S2": {"S1"}, "S4": {"S3"}}
 
 
-def total_distance(order, *, costs=COST, start_waypoint="HOME"):
-    """지정한 위치에서 출발해 모든 단계를 방문하고 HOME으로 돌아오는 비용."""
-    route = (start_waypoint, *(STEP_WAYPOINT[step] for step in order), "HOME")
-    total = 0
-    for start, end in pairwise(route):
-        if (start, end) not in costs:
-            raise ValueError(f"Missing cost: {start} -> {end}")
-        total += costs[start, end]
-    return total
+def total_distance(order, *, costs=COST):
+    return planner.total_distance(order, STEP_WAYPOINT, costs, "HOME", "HOME")
 
 
-def build_order(*, greedy):
-    pending = list(STEP_WAYPOINT)
-    completed = set()
-    order = []
-    position = "HOME"
+def build_order(*, greedy, costs=COST):
+    return planner.build_order(
+        STEP_WAYPOINT, PREREQUISITES, costs, "HOME", greedy=greedy
+    )
 
-    while pending:
-        ready = [
-            step for step in pending
-            if PREREQUISITES.get(step, set()) <= completed
-        ]
-        if greedy:
-            chosen = min(ready, key=lambda step: COST[position, STEP_WAYPOINT[step]])
-        else:
-            chosen = ready[0]
-
-        order.append(chosen)
-        pending.remove(chosen)
-        completed.add(chosen)
-        position = STEP_WAYPOINT[chosen]
-
-    return tuple(order)
-
-
-def valid_orders(*, satisfied_steps=()):
-    for order in permutations(STEP_WAYPOINT):
-        completed = set(satisfied_steps)
-        for step in order:
-            if not PREREQUISITES.get(step, set()) <= completed:
-                break
-            completed.add(step)
-        else:
-            yield order
 
 def find_best_order(*, costs=COST, start_waypoint="HOME", satisfied_steps=()):
-    best = None
-    for order in valid_orders(satisfied_steps=satisfied_steps):
-        try:
-            distance = total_distance(
-                order, costs=costs, start_waypoint=start_waypoint
-            )
-        except ValueError:
-            continue
+    return planner.find_best_order(
+        STEP_WAYPOINT, PREREQUISITES, costs, start_waypoint,
+        satisfied=satisfied_steps, end="HOME",
+    )
 
-        if best is None or distance < best[1]:
-            best = (order, distance)
-
-    if best is None:
-        raise ValueError("No reachable route")
-
-    return best
 
 class Research2MockTest(unittest.TestCase):
     def test_fifo_uses_registration_order(self):
@@ -97,7 +39,7 @@ class Research2MockTest(unittest.TestCase):
         self.assertEqual(total_distance(order), 16)
 
     def test_exhaustive_search_finds_minimum_cost(self):
-        candidates = list(valid_orders())
+        candidates = list(planner.valid_orders(STEP_WAYPOINT, PREREQUISITES))
         self.assertEqual(len(candidates), 6)
         best = min(candidates, key=total_distance)
         self.assertEqual(best, ("S1", "S3", "S2", "S4"))
@@ -177,3 +119,14 @@ class Research2MockTest(unittest.TestCase):
 
         self.assertCountEqual(order, ("S2", "S4", "S5", "S6"))
         self.assertLess(order.index("S5"), order.index("S6"))
+    def test_greedy_skips_a_missing_segment(self):
+        costs = dict(COST)
+        del costs["A", "B"]
+        self.assertEqual(build_order(greedy=True, costs=costs), ("S1", "S2", "S3", "S4"))
+
+    def test_greedy_reports_no_reachable_segment(self):
+        costs = dict(COST)
+        del costs["HOME", "A"]
+        del costs["HOME", "B"]
+        with self.assertRaisesRegex(planner.RouteUnavailable, "No reachable route"):
+            build_order(greedy=True, costs=costs)
