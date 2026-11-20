@@ -138,3 +138,48 @@
   - 경로 품질 지표와 경로 그림으로 한 방향에서만 A*가 먼 길을 고르는 원인을 확인한다.
   - `roundtrip_time`이 커지는 원인(클라이언트 또는 서버)을 따로 확인한다.
   - 주행 중 차단은 Gazebo 주행 비교에서 D와 함께 본다.
+
+## 2026-11-19 — 교차 검증 (A, Ubuntu 24.04 ARM64 UTM) — PR #5 리뷰로 받은 보고
+
+- **목적:** 다른 환경에서 같은 결과가 나오는지 확인한다. 이 항목은 B가 잰 것이 아니라 A(윤현수)가 PR #5 리뷰에 적은 내용을 옮긴 것이다.
+- **실행 모드:** SIM (planner-only)
+- **조건:** PR HEAD `fcb7a48`, Ubuntu 24.04 ARM64(UTM), ROS 2 Jazzy, Nav2 1.3.14. 예열 1회 + 30회.
+- **이전 실험 대비 바꾼 조건:** 실행 환경(x86_64 WSL2 Docker → ARM64 UTM 가상머신).
+- **관찰 (A의 보고):**
+  - 단위 테스트 41건 통과.
+  - 기본 비교 480/480, R1-D 480/480이 기대와 일치했다. 성공·실패 건수와 실패 사유가 저장소 기록과 같았고, 평균 계획 경로 길이는 0.0001 m까지 같았다.
+  - R1-D의 한 실행에서는 측정 80건과 예열 8건이 `GOAL_REJECTED`로 기록됐다. 서버 로그에 `Action server is inactive. Rejecting the goal.`이 있었다. 이 실행은 비교에서 제외했다.
+- **문제와 원인:** `ComputePathToPose` 서버는 `planner_server`가 `active`가 되기 전에도 검색된다. 측정 스크립트는 서버 검색만 기다렸기 때문에, 활성화가 늦은 환경에서는 측정이 먼저 시작됐다.
+  B의 PC에서는 한 번도 나타나지 않았던 문제다.
+- **다음:** 첫 예열 전에 lifecycle `active`를 확인하도록 고친다.
+
+## 2026-11-20 — 시작 경합 재현 시험 (결과 보관 안 함)
+
+- **목적:** 위 문제를 재현하고, 고친 스크립트가 막는지 확인한다.
+- **실행 모드:** SIM (planner-only, Gazebo 미사용)
+- **조건:** `bc3a0f0`과 같은 내용의 코드, Docker `amr-path-planner-bench:jazzy`. lifecycle manager 없이 `map_server`는 `active`, `planner_server`는 `inactive`(configure만)로 만들었다.
+- **이전 실험 대비 바꾼 조건:** 노드 상태를 손으로 만들었다.
+- **관찰:**
+  - `planner_server`가 `inactive`인 채로 두면 스크립트가 8 s 뒤 "`/planner_server is not active ... (last state: inactive [2])`"로 끝났다. 결과 폴더는 없었고 `planner_server`가 거절한 요청도 0건이었다.
+  - 스크립트 시작 5 s 뒤에 `planner_server`를 활성화하면, 스크립트가 기다렸다가 측정했다. 48건이 모두 기대와 일치했고 `GOAL_REJECTED`는 0건이었다. `meta.json`에 확인한 상태가 남았다.
+- **문제와 원인:** 없음.
+- **다음:** R1-D를 다시 측정한다.
+
+## 2026-11-20 — `20261120T010411Z_SIM_lecture_hall_v1_r1d`
+
+- **목적:** lifecycle 확인을 넣은 코드로 R1-D를 다시 측정한다(PR #5 리뷰 요청).
+- **실행 모드:** SIM (planner-only, Gazebo 미사용)
+- **조건:**
+  - 측정 코드 `bc3a0f0`
+  - 버전: `navfn_compare@b6b5e3a1039a`, `lecture_hall_real@4995e81c1fb1`, 차단 지도 `+R1-D1@c254d94b7898`·`+R1-D2@07dc060afa8c`, `lecture_hall_v1_r1d@a663bec775cf`
+  - 환경: Docker `amr-path-planner-bench:jazzy` (ROS 2 Jazzy, Nav2 1.3.14), Windows 11 + WSL2. 예열 1회 + 30회.
+- **이전 실험 대비 바꾼 조건:** 측정 전에 `map_server`·`planner_server`의 `active`를 확인한다. 요청·설정·지도·시나리오는 같다.
+- **관찰:**
+  - 측정 480회가 모두 기대와 일치했다. `GOAL_REJECTED`는 없었다.
+  - 경로 길이는 `20261119T012513Z`와 소수 넷째 자리까지 같았다(R1-D1 차단 후 정방향 A* 12.0787 / Dijkstra 10.935 m).
+  - R1-D2 차단 후는 두 설정 모두 0/30, `NO_VALID_PATH`였다.
+  - `meta.json`의 `lifecycle_before_measuring`에 두 노드가 `active [3]`으로 기록됐다.
+  - 같은 수정을 넣은 이전 코드(`acd8b7b`, 후속 PR 범위의 열이 포함된 코드)로 잰 `20261120T002730Z`도 480/480이었다. 그 결과는 후속 브랜치에 있다.
+  - A가 Ubuntu 24.04 ARM64(UTM)에서 고친 코드를 실행해 `active`가 될 때까지 기다리는 것과 R1-D 480/480, `GOAL_REJECTED` 0건을 확인했다(A의 보고).
+- **문제와 원인:** 없음.
+- **다음:** 경로 품질 지표, 임시 Gazebo 주행 비교, Smac Planner 2D 비교는 후속 PR로 나눠 올린다.

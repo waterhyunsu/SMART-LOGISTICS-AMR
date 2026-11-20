@@ -2,7 +2,7 @@
 
 > **상태:** 작성 중 (초안). 항목 순서는 `docs/reference/ORIGINAL_PROPOSAL.md` §12.4를 따른다.
 > **담당:** B — 정지호. 측정한 내용만 쓴다. 측정하지 않은 항목은 "미정" 또는 "미측정"으로 둔다.
-> **최종 선정(P-009):** 미정 (VERIFY, B·D 실험 후 A 승인)
+> **최종 선정(P-009):** 미정 (VERIFY). A↔D 통합은 우선 NavFn Dijkstra로 진행한다(§6). 최종 확정은 공식 지도와 D의 설정에서 주행까지 비교한 뒤 A가 한다.
 
 ## 1. 문제 상황
 
@@ -63,6 +63,7 @@ NavFn 내용은 Nav2 Jazzy 소스 기준이다:
 | --- | --- | --- | --- | --- |
 | `20261118T061956Z_SIM_lecture_hall_v1` | 2026-11-18 | SIM (planner-only) | 예열 1 + 30 | [summary.md](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md), 요약표는 [README "측정 결과"](README.md#측정-결과--sim-planner-only) |
 | `20261119T012513Z_SIM_lecture_hall_v1_r1d` | 2026-11-19 | SIM (planner-only) | 예열 1 + 30 | [summary.md](results/20261119T012513Z_SIM_lecture_hall_v1_r1d/summary.md), 요약표는 [README "R1-D 경로 차단"](README.md#측정-결과--r1-d-경로-차단-sim-planner-only) |
+| `20261120T010411Z_SIM_lecture_hall_v1_r1d` | 2026-11-20 | SIM (planner-only), 시작 조건 수정 후 R1-D 재측정 | 예열 1 + 30 | [summary.md](results/20261120T010411Z_SIM_lecture_hall_v1_r1d/summary.md). 480/480 일치, `GOAL_REJECTED` 0건, 경로 길이는 위 R1-D 측정과 같다 |
 
 **R1-A~C, 도달 불가** (`20261118T061956Z`)
 
@@ -93,6 +94,9 @@ NavFn 내용은 Nav2 Jazzy 소스 기준이다:
 - R1-C 역방향에서는 A*가 0.17 m 짧았다. §2.1대로 NavFn은 길이가 아니라 비용을 줄이므로, 이것이 A*가 더 좋다는 뜻은 아니다.
   장애물에 더 붙은 경로일 수 있으나 **[미확인]**이다. 장애물까지의 거리 같은 경로 품질 지표는 아직 기록하지 않았다.
 - 도달 불가: 벽으로 막힌 목표는 `NO_VALID_PATH`, 지도 밖 목표는 `GOAL_OUTSIDE_MAP`으로 두 설정 모두 실패했다. 실패 응답에는 `planning_time`이 보고되지 않았다.
+- **교차 검증에서 찾은 시작 경합 (A, PR #5 리뷰):** Ubuntu 24.04 ARM64(UTM)에서 두 실험이 480/480으로 재현됐고 평균 계획 경로 길이가 0.0001 m까지 같았다.
+  다만 R1-D의 한 실행에서 `planner_server`가 `inactive`일 때 측정이 시작돼 88건(측정 80, 예열 8)이 `GOAL_REJECTED`로 기록됐다.
+  원인은 측정 스크립트가 Action 서버 검색만 확인하고 lifecycle 활성화를 기다리지 않은 것이다. `active` 확인을 넣어 고쳤고(`bc3a0f0`), 고친 뒤에는 B와 A의 환경 모두에서 480/480, `GOAL_REJECTED` 0건이었다.
 - **R1-D1 정방향**에서도 A*가 1.14 m 더 먼 우회로를 골랐다. 역방향은 거의 같았다(A*가 0.017 m 짧음).
   R1-C 정방향과 같이 "한 방향에서만 A*가 먼 길"인 사례가 하나 더 나왔다. 원인은 R1-C와 같은 후보(부분 포텐셜 + 기울기 따라가기)이고 **[미분석]**이다.
   이전 Humble 연구의 같은 쌍(A* 12.565 ± 0.265 / Dijkstra 10.942 m)과 경향이 같다.
@@ -104,7 +108,12 @@ NavFn 내용은 Nav2 Jazzy 소스 기준이다:
 
 ## 6. 최종 선정 기술
 
-**미정.**
+**최종 선정은 미정이다 (P-009 VERIFY).**
+
+- **A↔D 통합에 쓸 전역 플래너 (2026-11-20, A의 결정):** NavFn Dijkstra — `nav2_navfn_planner::NavfnPlanner`, `use_astar: false` (Nav2 기본값).
+- 이 PR의 측정에서는 두 설정의 경로 생성 성공률이 같았고, NavFn A*는 R1-C 정방향과 R1-D1 차단 후 정방향에서 더 먼 경로를 냈다(§4·§5).
+- A가 든 주행 근거(임시 SIM에서 Dijkstra 50/50 도착, 복구 동작이 A*보다 적음)와 Smac Planner 2D 비교는 이 PR에 없고 후속 PR로 올린다.
+- Smac Planner 2D는 후보로 남긴다. 최종 확정은 공식 지도와 D의 설정에서 주행까지 비교한 뒤 한다.
 
 ## 7. 선택 근거
 
@@ -127,7 +136,7 @@ NavFn 내용은 Nav2 Jazzy 소스 기준이다:
 | R1-D는 정적 지도에 상자를 그려 계획만 비교했다. 주행 중 감지·재계획·BT 복구는 보지 않았다 | Gazebo 주행 비교에서 같은 상자 배치로 확인한다 (D 협업) |
 | 계획 시간은 WSL2 + Docker 환경의 값이다 | 같은 세션 안에서만 비교한다. 실차 PC에서 다시 잰다 |
 | `roundtrip_time`이 같은 실행 안에서 요청이 쌓일수록 커진다 (원인 미분석) | 알고리즘 비교에는 `planning_time`만 쓴다. 원인(클라이언트 또는 planner_server)을 확인한다. C의 비용표 계산처럼 요청을 많이 보내는 경우에도 해당할 수 있어 C에 공유한다 |
-| 다른 환경(네이티브 Ubuntu, Mac VM)에서 교차 실행하지 않았다 | 팀원 환경에서 같은 명령으로 경로 길이 일치를 확인한다 |
+| 교차 실행은 1건(A의 Ubuntu 24.04 ARM64 UTM)이다 | 다른 팀원 환경(네이티브 Ubuntu)에서도 같은 명령으로 확인한다 |
 | 주행 결과 없음 | Gazebo Harmonic 주행, 실차 검증 |
 | NavFn 두 모드만 비교했다. 정석 A*와의 차이는 소스 분석뿐이다 (§2.1) | 정석에 가까운 A*인 Smac Planner 2D를 같은 조건으로 추가 비교할지 검토한다 |
 | 경로 품질은 길이만 기록했다 | 장애물까지 최소 거리와 경로 매끄러움 지표를 추가한다 (legacy 연구가 쓴 지표) |

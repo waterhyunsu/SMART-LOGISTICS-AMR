@@ -8,11 +8,11 @@
 | 항목 | 상태 |
 | --- | --- |
 | B 가이드 첫 번째 기능: 재현 가능한 비교 조건 | 구현함. 고정 출발/목표 쌍, 실패 사례, 설정 쌍, 실행 스크립트, 결과 기록 |
-| MOCK | `tests/` 41개 통과 (가짜 플래너, 경로 차단 20개 포함) |
-| SIM (planner-only) | Jazzy Docker에서 측정: R1-A~C·도달 불가 [`results/20261118T061956Z_SIM_lecture_hall_v1`](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md), R1-D 경로 차단 [`results/20261119T012513Z_SIM_lecture_hall_v1_r1d`](results/20261119T012513Z_SIM_lecture_hall_v1_r1d/summary.md) |
+| MOCK | `tests/` 45개 통과 (가짜 플래너, 경로 차단 20개·lifecycle 대기 4개 포함) |
+| SIM (planner-only) | Jazzy Docker에서 측정: R1-A~C·도달 불가 [`results/20261118T061956Z_SIM_lecture_hall_v1`](results/20261118T061956Z_SIM_lecture_hall_v1/summary.md), R1-D 경로 차단 [`results/20261119T012513Z_SIM_lecture_hall_v1_r1d`](results/20261119T012513Z_SIM_lecture_hall_v1_r1d/summary.md), 시작 조건을 고친 뒤의 R1-D 재측정 [`results/20261120T010411Z_SIM_lecture_hall_v1_r1d`](results/20261120T010411Z_SIM_lecture_hall_v1_r1d/summary.md). A가 Ubuntu 24.04 ARM64(UTM)에서 교차 실행해 같은 결과를 재현했다 |
 | SIM (Gazebo 주행) / REAL | 미측정 |
 | 지도 | **[초안-팀합의필요]** legacy 강의실 복제 맵을 임시로 사용. D의 공식 지도·HOME·A~D 지점(P-014) 확정 전 |
-| 전역 플래너 최종 선정 (P-009) | VERIFY. 이 결과만으로 선정하지 않는다 |
+| 전역 플래너 최종 선정 (P-009) | VERIFY. A↔D 통합은 우선 NavFn Dijkstra(`use_astar: false`)로 진행한다(2026-11-20, A). 최종 확정은 공식 지도와 D의 설정에서 주행까지 비교한 뒤다 |
 | 이전 연구 (Humble) | [`legacy_r1/`](legacy_r1/README.md): 참고 자료, Jazzy에서는 [미확인] |
 
 ## 구성
@@ -44,6 +44,7 @@
 | 순서 영향 | 반복마다 두 플래너의 실행 순서를 바꾼다 |
 | 반복 | 예열 1회(요약에서 제외, `warmup=True`로 기록) + 측정 N회 |
 | 기록 | 성공과 실패를 모두 기록한다. 실패는 Nav2 오류 이름(`NO_VALID_PATH` 등)으로 남기고 임의 거리로 대체하지 않는다 |
+| 측정 시작 조건 | Action 서버가 검색된 뒤에도 `map_server`·`planner_server`의 lifecycle 상태가 `active`가 될 때까지 기다린다. 서버는 활성화 전에도 검색되고 그동안 요청을 거절하기 때문이다. 제한 시간(`--server-timeout`) 안에 `active`가 아니면 예열도 측정도 하지 않고 끝낸다(결과 폴더를 만들지 않음). 확인한 상태는 `meta.json`의 `lifecycle_before_measuring`에 남는다 |
 | 경로 차단 (R1-D) | 시나리오 쌍의 `obstacles` 상자를 점유 칸으로 그린 지도 사본을 `map_server/load_map`으로 넣는다. global costmap에 상자 칸이 모두 lethal로 나타난 것을 확인한 뒤에만 잰다(확인하지 못하면 측정을 거부한다). 같은 쌍을 차단 전 지도와 차단 지도에서 모두 재고, 차단 지도는 `map_version`이 따로 붙는다(`<지도>+<쌍 ID>@<해시>`). 플래너 설정 파일은 바꾸지 않는다 |
 
 ## 실행 방법
@@ -87,7 +88,7 @@ python3 -m pytest experiments/path_planner/tests -q      # PyYAML, pytest 필요
 
 | 값 | 환경 영향 | 다룰 방법 |
 | --- | --- | --- |
-| 경로 길이·성공 여부·오류 코드 | Nav2 버전·설정·지도가 같으면 플랫폼과 무관해야 한다. **[미확인]** 다른 환경에서는 아직 교차 실행하지 않았다. 같은 PC에서도 Nav2를 새로 띄운 실행끼리 R1-C가 최대 0.0026 m 달랐다 ([실험 기록](EXPERIMENT_LOG.md)) | 네이티브 Ubuntu나 Mac VM에서 같은 명령을 실행하고 `summary.csv`의 `planned_distance`를 비교한다. 수 mm는 허용 오차로 본다 |
+| 경로 길이·성공 여부·오류 코드 | Nav2 버전·설정·지도가 같으면 플랫폼과 무관해야 한다. **교차 확인 (A, PR #5 리뷰):** Ubuntu 24.04 ARM64(UTM) + Nav2 1.3.14에서 기본 비교 480/480, R1-D 480/480이 재현됐다. 성공·실패 건수와 실패 사유가 같았고 평균 계획 경로 길이는 0.0001 m까지 같았다. 시작 조건을 고친 뒤의 R1-D도 480/480, `GOAL_REJECTED` 0건으로 재현됐다. 같은 PC에서도 Nav2를 새로 띄운 실행끼리 R1-C가 최대 0.0026 m 달랐던 적이 있다 ([실험 기록](EXPERIMENT_LOG.md)) | 다른 환경에서 같은 명령을 실행하고 `summary.csv`의 `planned_distance`를 비교한다. 수 mm는 허용 오차로 본다 |
 | `planning_time`, `roundtrip_time` | CPU와 가상화 방식(WSL2·Docker, UTM VM, 로봇 PC)에 따라 달라진다 | 같은 실험(같은 세션) 안에서 A*와 Dijkstra만 비교한다. 다른 PC 결과와 절대값을 비교하지 않는다 |
 | Nav2 버전 | Docker 이미지는 빌드 시점의 최신 apt 패키지를 받는다 (현재 1.3.14) | `meta.json`의 `env.nav2_planner`를 확인한다. 버전이 다르면 결과를 따로 본다 |
 | Mac (ARM64) | macOS에서는 Jazzy를 직접 실행하지 않고 Ubuntu VM이나 Docker를 쓴다. `ros:jazzy-ros-base`에는 arm64 이미지가 있다. **[미확인]** 이 Dockerfile로 arm64 빌드는 해 보지 않았다 | VM 결과는 VM 환경 결과로 표시한다 (AGENTS.md §7) |
@@ -198,6 +199,14 @@ NavFn은 요청마다 costmap 전체에서 새로 계산하므로 차단 후 계
 - **A·D (실패 처리):** planner-only에서는 막힌 경로가 계획 단계에서 바로 실패로 돌아온다. 주행 중 막힌 경우
   BT의 재계획·복구가 언제 포기하는지는 이 실험 범위가 아니다(이전 Humble 주행에서는 경로가 없을 때 180 s 안에 실패를 알리지 않았다:
   [`legacy_r1` §7.2](legacy_r1/experiments/r1/README.md)). Mission Manager의 시간 상한·진행 감시 정책을 정할 때 참고 자료로 공유한다.
+
+## 후속 PR로 나눈 작업
+
+이 폴더의 다음 작업은 이미 측정까지 했지만, 검토를 나누기 위해 이 PR에서 빼고 후속 PR로 올린다(브랜치 `feat/b-path-planner-followup`에 보존).
+
+1. 경로 품질 지표(장애물까지 거리, 꺾인 각도 합, 0.10 m 간격 길이)와 경로 그림·비교 그래프
+2. Gazebo Harmonic 주행 비교 — B의 임시 환경 **[초안-팀합의필요]**
+3. Smac Planner 2D를 세 번째 후보로 넣은 비교 **[초안-팀합의필요]**
 
 ## 다음 작업 후보
 
