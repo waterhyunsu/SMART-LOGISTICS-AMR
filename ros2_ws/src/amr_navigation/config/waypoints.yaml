@@ -1,0 +1,9 @@
+# A·C·D 공용 Waypoint 좌표 (tb3_sandbox 지도, map 좌표계)
+# 단위: x, y [m], yaw [rad]. ID 는 영문·숫자·_·- 만 사용.
+# 좌표를 바꾸면 C 의 비용표도 다시 계산해야 한다 (cost_revision).
+frame_id: map
+map: tb3_sandbox
+waypoints:
+  HOME:     {x: -2.0,  y: -0.5, yaw: 0.0}   # 로봇 시작 위치 (initial_pose)
+  PICKUP_1: {x: -0.55, y: -0.5, yaw: 0.0}   # PR #14 SIM 주행 확인 (SIM_P1)
+  DROP_1:   {x: 0.55,  y: 0.5,  yaw: 0.0}   # C 비용표 계획 경로 정상 확인 (확정)
