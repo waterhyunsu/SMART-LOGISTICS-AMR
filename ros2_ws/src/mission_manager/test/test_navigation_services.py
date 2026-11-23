@@ -8,14 +8,11 @@ from time import monotonic
 from uuid import uuid4
 
 import pytest
-from nav2_msgs.action import NavigateToPose
-from rclpy.action import ActionClient
-from rclpy.action.graph import get_action_names_and_types
 from rclpy.context import Context
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.parameter import Parameter
 
-from logistics_msgs.srv import DispatchGoal, ReportGoalEvent
+from logistics_msgs.srv import DispatchGoal, LookupGoal, ReportGoalEvent
 
 from mission_manager.navigation_services import NavigationServices
 from mission_manager.node import MissionManager, NavigationObservation
@@ -84,10 +81,8 @@ def test_gate1_separate_processes(tmp_path, monkeypatch, mode, result_error, d_a
         _, nav_log = run_process(
             stack, tmp_path, namespace, 'server', [f'mode:={mode}', 'delay_sec:=0.7'])
         with manager(path, namespace=namespace) as (node, executor):
-            action_name = f'{namespace}/navigate_to_pose'
-            until(executor, lambda: any(
-                name == action_name for name, _ in get_action_names_and_types(node)))
             stop_d, d_log = run_process(stack, tmp_path, namespace, 'd', [
+                'wait_for_nav2_before_dispatch:=true',
                 f'accept_timeout_sec:={d_accept_timeout}',
                 f'fault_result_error:={str(result_error).lower()}'])
             adapter = NavigationServices(node, timeout_sec=3.0)
@@ -172,9 +167,8 @@ def test_d_exits_after_acceptance(tmp_path, monkeypatch):
     namespace = '/gate1_' + uuid4().hex
     with ExitStack() as stack, manager(tmp_path / 'mission.sqlite', namespace) as (node, executor):
         run_process(stack, tmp_path, namespace, 'server', ['delay_sec:=15.0'])
-        until(executor, lambda: any(
-            name == f'{namespace}/navigate_to_pose' for name, _ in get_action_names_and_types(node)))
-        stop_d, d_log = run_process(stack, tmp_path, namespace, 'd', [])
+        stop_d, d_log = run_process(
+            stack, tmp_path, namespace, 'd', ['wait_for_nav2_before_dispatch:=true'])
         adapter = NavigationServices(node, timeout_sec=3.0)
         until(executor, adapter.dispatch_client.service_is_ready)
 
@@ -233,9 +227,21 @@ def test_retry_after_not_ready_then_nav2_start(tmp_path, monkeypatch, drop_recei
         assert adapter.approve_retry(early_lookup, explicitly_approved=True) is None
 
         _, nav_log = run_process(stack, tmp_path, namespace, 'server', ['delay_sec:=0.2'])
-        action = ActionClient(node, NavigateToPose, 'navigate_to_pose')
-        until(executor, action.server_is_ready)
-        until(executor, adapter.lookup_client.service_is_ready)
+        dispatched = sent_requests[0]
+        readiness_probe = LookupGoal.Request(
+            mission_id=dispatched.mission_id, step_id=dispatched.step_id,
+            plan_version=dispatched.plan_version, waypoint_id=dispatched.waypoint_id,
+            attempt_id=dispatched.attempt_id, nav_goal_id=dispatched.nav_goal_id)
+        # Observe readiness in D. A's Action discovery can finish before D's.
+        deadline = monotonic() + 12
+        while True:
+            readiness_probe.check_id = uuid4().hex
+            probe = adapter.lookup_client.call_async(readiness_probe)
+            until(executor, probe.done, timeout=max(0, deadline - monotonic()))
+            if probe.result().observation == LookupGoal.Response.OBS_REFUSED_BEFORE_SEND:
+                break
+            assert probe.result().observation == LookupGoal.Response.OBS_UNKNOWN
+            assert monotonic() < deadline, 'D has not discovered the Nav2 Action server'
         lookup = adapter.lookup()
         assert lookup is not None
         until(executor, lambda: adapter.last_report is not None)
@@ -267,3 +273,34 @@ def test_retry_after_not_ready_then_nav2_start(tmp_path, monkeypatch, drop_recei
         assert node.state.nav_goal_id != original_id
         until(executor, lambda: node.state.waiting)
         assert nav_log.read_text().count('[GOAL]') == 1
+
+
+def test_dispatch_service_waits_for_d_action_discovery(tmp_path, monkeypatch):
+    monkeypatch.setenv('ROS_AUTOMATIC_DISCOVERY_RANGE', 'LOCALHOST')
+    namespace = '/gate1_' + uuid4().hex
+    with ExitStack() as stack, manager(tmp_path / 'mission.sqlite', namespace) as (node, executor):
+        _, d_log = run_process(stack, tmp_path, namespace, 'd',
+                               ['wait_for_nav2_before_dispatch:=true', 'use_sim_time:=true'])
+        adapter = NavigationServices(node, timeout_sec=3.0)
+        until(executor, adapter.lookup_client.service_is_ready)
+        deadline = monotonic() + 0.5
+        while monotonic() < deadline:
+            executor.spin_once(timeout_sec=0.05)
+            assert not adapter.dispatch_client.service_is_ready()
+
+        node.state.add_steps(job('one'))
+        assert node.state.apply(mock_optimizer(node.state.request('HOME', 'r1')))
+        goal = node.claim_next_goal()
+        assert not adapter.dispatch(goal)
+        assert node.state.nav_goal_id is None
+
+        _, nav_log = run_process(stack, tmp_path, namespace, 'server', ['delay_sec:=0.2'])
+        until(executor, adapter.dispatch_client.service_is_ready)
+        assert adapter.dispatch(goal)
+        goal_id = node.state.nav_goal_id
+        until(executor, lambda: node.state.waiting)
+        assert node.step_status(goal.step_id) == 'waiting_confirmation'
+        assert not node.state.recovery_required
+        assert d_log.read_text().count('[SEND]') == 1
+        assert f'[SEND] {goal_id}' in d_log.read_text()
+        assert f'받은 UUID={goal_id}' in nav_log.read_text()

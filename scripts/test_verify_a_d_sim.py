@@ -4,10 +4,11 @@ from pathlib import Path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, call
+from unittest.mock import Mock, call, patch
 
-from verify_a_d_sim import GoalEvidence, load_config, ros_context, verify_evidence
+from verify_a_d_sim import GoalEvidence, load_config, ros_context, run_pr14_d, verify_evidence
 
 
 UUID = '0123456789abcdef0123456789abcdef'
@@ -41,6 +42,30 @@ class RosContextTests(unittest.TestCase):
             with ros_context(ros, []):
                 self.fail('entered context after failed init')
         ros.try_shutdown.assert_not_called()
+
+    def test_builtin_d_waits_for_nav2_and_cleans_up_on_shutdown(self):
+        class ExternalShutdown(Exception):
+            pass
+
+        for stop in (KeyboardInterrupt, ExternalShutdown):
+            with self.subTest(stop=stop):
+                ros = Mock()
+                ros.spin.side_effect = stop
+                d_adapter = Mock()
+                config = SimpleNamespace(waypoint_id='TEST', waypoint_pose=POSE)
+                with patch.dict(sys.modules, {
+                    'rclpy': ros,
+                    'rclpy.executors': SimpleNamespace(ExternalShutdownException=ExternalShutdown),
+                    'amr_navigation': SimpleNamespace(gate1_mock=d_adapter),
+                }):
+                    run_pr14_d(config)
+
+                ros.init.assert_called_once_with(args=[
+                    '--ros-args', '-p', 'use_sim_time:=true',
+                    '-p', 'wait_for_nav2_before_dispatch:=true',
+                ])
+                d_adapter.DNavigationNode.return_value.destroy_node.assert_called_once_with()
+                ros.try_shutdown.assert_called_once_with()
 
 
 class EvidenceTests(unittest.TestCase):

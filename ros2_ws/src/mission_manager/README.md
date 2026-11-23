@@ -199,7 +199,8 @@ D와 합의한 값으로 채운다. [실행 스크립트](../../../scripts/verif
   라디안이다. D가 확인한 Waypoint ID를 넣는다. Nav2의 최종 위치 판정에 사용할
   거리 허용치는 `tolerance_m`으로 지정한다.
 - `d_command: null`은 PR #14의 D 어댑터를 사용하고 입력 좌표를 해당 프로세스에만
-  주입한다. D가 별도 실행 명령을 공유하면 인자 배열로 지정할 수 있다. 별도 D
+  주입한다. 내장 어댑터는 자신의 Nav2 Action 클라이언트가 서버를 발견한 후
+  `dispatch_goal`을 공개한다. D가 별도 실행 명령을 공유하면 인자 배열로 지정할 수 있다. 별도 D
   실행은 같은 Waypoint·SIM 시간·루트 네임스페이스를 사용하고, PR #14의
   `[SEND] <UUID> → waypoint <ID> (x, y, yaw)` 로그 형식을 제공해야 한다.
 - 격리된 미사용 `ros_domain_id`를 선택한다. 실행기는 localhost DDS, 빈 정적 피어,

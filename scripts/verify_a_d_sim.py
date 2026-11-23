@@ -184,12 +184,18 @@ def ros_context(rclpy, args):
 def run_pr14_d(config):
     import rclpy
     from amr_navigation import gate1_mock
+    from rclpy.executors import ExternalShutdownException
 
     gate1_mock.MOCK_WAYPOINTS = {config.waypoint_id: config.waypoint_pose}
-    with ros_context(rclpy, ['--ros-args', '-p', 'use_sim_time:=true']):
+    with ros_context(rclpy, [
+        '--ros-args', '-p', 'use_sim_time:=true',
+        '-p', 'wait_for_nav2_before_dispatch:=true',
+    ]):
         node = gate1_mock.DNavigationNode()
         try:
             rclpy.spin(node)
+        except (KeyboardInterrupt, ExternalShutdownException):
+            pass
         finally:
             node.destroy_node()
 
