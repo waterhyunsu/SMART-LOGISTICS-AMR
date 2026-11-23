@@ -3,9 +3,12 @@
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// A 상태 값은 A 코드(mission_manager/node.py) 그대로 소문자로 온다.
 const KO = {
-  PENDING: '대기', READY: '준비', IN_PROGRESS: '진행 중', WAITING_CONFIRMATION: '인계 대기', COMPLETED: '완료',
-  FAILED: '실패', CANCELLED: '취소', IDLE: '대기', RUNNING: '운행 중',
+  pending: '대기', executing: '이동 중', waiting_confirmation: '인계 대기', completed: '완료',
+  run_on: '허용됨', run_off: '실행 요청 전',
+  idle: '대기', active: '운행 중', returning_home: 'HOME 복귀 중', recovery_required: 'A 복구 확인 중',
+  applied: '계획 적용', deferred: '인계 후 재계획', rejected: '계획 거부', timeout: '계획 시간 초과', failed: '계획 실패',
   PENDING_SEND: '전송 중', UNCONFIRMED: '응답 미확인', RECOVERY_PENDING: 'A 복구 대기', ACCEPTED: '수락', REJECTED: '거부', CONFLICT: '충돌',
 };
 const badge = (s) => `<span class="st st-${esc(s)}">${esc(KO[s] || s)}</span>`;
@@ -48,24 +51,31 @@ function render() {
 
 // ------------------------------------------------------------------ 현재 미션 + 인계
 function renderMission(a, handoffs) {
-  const running = a.mission_status === 'RUNNING';
-  $('#mission-status').innerHTML = a.mission_status ? badge(a.mission_status) : '';
+  // A가 실행을 허용하기 전(run_authorized=false)에는 '운행 중' 대신 '실행 요청 전'으로 표시
+  $('#mission-status').innerHTML = a.mission_status
+    ? badge(a.mission_status === 'active' && !a.run_authorized ? 'run_off' : a.mission_status) : '';
   $('#mission-summary').innerHTML = a.mission_id ? `
     <dl class="kv">
       <dt>미션</dt><dd>${esc(a.mission_id)}</dd>
-      <dt>활성 계획 버전</dt><dd>v${a.active_version}</dd>
-      <dt>현재 단계</dt><dd>${esc(a.current_step_id || '-')}</dd>
-    </dl>` : '<span class="muted">미션 없음 — 작업을 요청하고 미션 시작을 요청하세요</span>';
+      <dt>활성 계획 버전</dt><dd>v${a.active_version ?? 0} ${a.plan_status ? badge(a.plan_status) : ''}</dd>
+      <dt>비용표</dt><dd>${esc(a.cost_revision || '-')}</dd>
+      <dt>실행</dt><dd>${a.run_authorized ? badge('run_on') : badge('run_off')}</dd>
+      <dt>현재 목표</dt><dd>${esc(a.current_goal ? (a.current_goal.step_id || 'HOME 복귀') : '-')}</dd>
+    </dl>` : '<span class="muted">미션 없음</span>';
+  const canRun = (a.steps || []).length > 0 && !a.run_authorized && a.mission_status !== 'completed';
+  $('#run-btn').disabled = !canRun;
+  $('#run-btn').textContent = a.run_authorized ? '미션 실행 중' : '미션 실행 요청';
 
   const box = $('#current-step');
-  const step = (a.steps || []).find((x) => x.step_id === a.current_step_id);
+  const goal = a.current_goal;
+  const step = goal && goal.step_id ? (a.steps || []).find((x) => x.step_id === goal.step_id) : null;
   if (step && a.waiting_confirmation) {
-    // 이 단계에 대한 E의 최근 발신 기록
+    // 도착 → A가 인계 대기로 전환. 이 단계에 대한 E의 최근 발신 기록
     const last = (handoffs || []).find((h) => h.mission_id === a.mission_id && h.step_id === step.step_id);
     const open = last && ['PENDING_SEND', 'UNCONFIRMED', 'RECOVERY_PENDING'].includes(last.status);
     const what = step.kind === 'PICKUP' ? '물품을 바구니에 실은 뒤' : '물품을 내린 뒤';
     box.innerHTML = `<div class="box waiting">
-      <p><b>${esc(step.waypoint_id)}</b> 지점 · <b>${esc(step.step_id)}</b> ${badge('WAITING_CONFIRMATION')}</p>
+      <p><b>${esc(step.waypoint_id)}</b> 도착 · <b>${esc(step.step_id)}</b> ${badge('waiting_confirmation')}</p>
       <p class="small">${what} 인계 완료를 눌러주세요. A가 수락해야 다음 작업으로 넘어갑니다.</p>
       ${open
         ? `<p class="small err">${last.status === 'RECOVERY_PENDING'
@@ -77,8 +87,12 @@ function renderMission(a, handoffs) {
     </div>`;
   } else if (step) {
     box.innerHTML = `<div class="box moving"><p><b>${esc(step.waypoint_id)}</b>(으)로 이동 중 · ${esc(step.step_id)} ${badge(step.status)}</p></div>`;
-  } else if (running) {
-    box.innerHTML = `<div class="box moving"><p>다음 단계 준비 또는 HOME 복귀 중</p></div>`;
+  } else if (goal) {
+    box.innerHTML = `<div class="box moving"><p><b>HOME</b>(으)로 복귀 중 <span class="small muted">(물품 인계 단계 아님)</span></p></div>`;
+  } else if ((a.steps || []).length && !a.run_authorized && a.mission_status !== 'completed') {
+    box.innerHTML = `<div class="box"><p>작업이 등록되었습니다. <b>미션 실행 요청</b>을 누르면 A가 준비 상태를 확인한 뒤 출발합니다.</p></div>`;
+  } else if (a.mission_status === 'completed') {
+    box.innerHTML = `<div class="box"><p>모든 인계와 HOME 복귀가 끝났습니다</p></div>`;
   } else box.innerHTML = '';
 
   box.querySelectorAll('[data-handoff]').forEach((b) => b.onclick = async () => {
@@ -89,13 +103,13 @@ function renderMission(a, handoffs) {
   });
   box.querySelectorAll('[data-retry]').forEach((b) => b.onclick = () => retryHandoff(b.dataset.retry, b));
 
-  // 남은 계획
-  const plan = [a.current_step_id, ...(a.plan || [])].filter(Boolean);
-  const pend = a.pending_replan || [];
-  $('#plan-view').innerHTML = plan.length || pend.length ? `
+  // 남은 계획 (A가 승인한 순서)
+  const plan = [goal && goal.step_id, ...(a.order || [])].filter(Boolean);
+  const deferred = a.deferred_order || null;
+  $('#plan-view').innerHTML = plan.length || deferred ? `
     <div><b>방문 계획 v${a.active_version}</b> <span class="muted small">A가 승인한 순서</span></div>
-    <div class="route">${plan.map((id, i) => `<span class="wp ${i === 0 && a.current_step_id ? 'now' : ''}">${esc(id)}</span>`).join('<span class="muted">→</span>')}</div>
-    ${pend.length ? `<div class="small muted" style="margin-top:6px">재계획 대기 (현재 단계 완료 후 적용): ${pend.map(esc).join(', ')}</div>` : ''}` : '';
+    <div class="route">${plan.map((id, i) => `<span class="wp ${i === 0 && goal && goal.step_id ? 'now' : ''}">${esc(id)}</span>`).join('<span class="muted">→</span>')}</div>
+    ${deferred ? `<div class="small muted" style="margin-top:6px">재계획 보류 (현재 단계 인계 후 적용): ${deferred.map(esc).join(', ')}</div>` : ''}` : '';
 }
 
 async function retryHandoff(id, btn) {
@@ -111,11 +125,9 @@ function renderJobs(a) {
   const steps = {}; (a.steps || []).forEach((x) => { (steps[x.job_id] ||= {})[x.kind] = x; });
   $('#job-table tbody').innerHTML = (a.jobs || []).map((j) => {
     const p = steps[j.job_id]?.PICKUP, d = steps[j.job_id]?.DROPOFF;
-    return `<tr><td><b>${esc(j.job_id)}</b></td><td>${esc(j.pickup)} → ${esc(j.dropoff)}</td>
-      <td>${p ? badge(p.status) : ''}</td><td>${d ? badge(d.status) : ''}</td>
-      <td class="small">${esc(j.mission_id || '미배정')}</td></tr>`;
+    return `<tr><td><b>${esc(j.job_id)}</b></td><td>${esc(p?.waypoint_id)} → ${esc(d?.waypoint_id)}</td>
+      <td>${p ? badge(p.status) : ''}</td><td>${d ? badge(d.status) : ''}</td><td>${badge(j.status)}</td></tr>`;
   }).join('') || '<tr><td colspan="5" class="muted">A에 등록된 Job이 없습니다</td></tr>';
-  $('#start-btn').disabled = a.mission_status === 'RUNNING' || !(a.jobs || []).some((j) => !j.mission_id);
 }
 
 // ------------------------------------------------------------------ E 발신 기록
@@ -163,12 +175,12 @@ function draw(a) {
   for (let y = Math.ceil(v.b.minY); y <= v.b.maxY; y++) { const [x1, y1] = px(v.b.minX, y, v), [x2] = px(v.b.maxX, y, v); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y1); ctx.stroke(); }
 
   const stepWp = Object.fromEntries((a.steps || []).map((x) => [x.step_id, x.waypoint_id]));
-  const target = a.current_step_id ? stepWp[a.current_step_id] : null;
+  const target = a.current_goal ? a.current_goal.waypoint_id : null;
   // 남은 계획 경로
   const route = [];
   if (a.robot) route.push([a.robot.x, a.robot.y]);
-  [a.current_step_id, ...(a.plan || [])].filter(Boolean).forEach((id) => { const w = S.wps[stepWp[id]]; if (w) route.push([w.x, w.y]); });
-  if (a.mission_status === 'RUNNING') route.push([S.wps.HOME.x, S.wps.HOME.y]);
+  [a.current_goal && a.current_goal.step_id, ...(a.order || [])].filter(Boolean).forEach((id) => { const w = S.wps[stepWp[id]]; if (w) route.push([w.x, w.y]); });
+  if (['active', 'returning_home'].includes(a.mission_status) && S.wps.HOME) route.push([S.wps.HOME.x, S.wps.HOME.y]);
   if (route.length > 1) {
     ctx.strokeStyle = '#d97706'; ctx.lineWidth = 3; ctx.setLineDash([10, 7]); ctx.beginPath();
     route.forEach(([x, y], i) => { const [X, Y] = px(x, y, v); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
@@ -178,8 +190,9 @@ function draw(a) {
     const [X, Y] = px(w.x, w.y, v);
     ctx.beginPath(); ctx.arc(X, Y, 17, 0, Math.PI * 2);
     ctx.fillStyle = w.id === target ? '#f97316' : (w.id === 'HOME' ? '#4f46e5' : '#374151'); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(w.id === 'HOME' ? 'H' : w.id, X, Y);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(w.id === 'HOME' ? 'H' : w.id.replace('PICKUP_', 'P').replace('DROP_', 'D').slice(0, 3), X, Y);
+    ctx.fillStyle = '#374151'; ctx.font = '12px sans-serif'; ctx.fillText(w.id, X, Y + 28);
   }
   if (a.robot) {
     const [X, Y] = px(a.robot.x, a.robot.y, v);
@@ -197,16 +210,19 @@ $('#job-form').onsubmit = async (e) => {
         msg(`${r.request_id}: ${KO[r.status]}${r.job_id ? ` → ${r.job_id}` : ''}`, r.status === 'ACCEPTED'); }
   catch (err) { msg(err.message); }
 };
-$('#start-btn').onclick = async () => {
-  try { const r = await api('/api/mission/start', { method: 'POST' }); msg(`${r.mission_id} 시작`, true); }
-  catch (err) { msg(err.message); }
-};
 document.querySelectorAll('[data-fault]').forEach((b) => b.onclick = async () => {
-  const body = { drop_next_ack: false, timeout_next: false }; body[b.dataset.fault] = true;
+  const body = { drop_next_ack: false, timeout_next: false, not_ready: !(S.snap?.a_state?.ready ?? true) }; body[b.dataset.fault] = true;
   await api('/api/mock/faults', { method: 'POST', body: JSON.stringify(body) });
   document.querySelectorAll('[data-fault]').forEach((x) => x.classList.toggle('armed', x === b));
   msg(`다음 요청 1회에 '${b.textContent}' 적용됨`, true, true);
 });
+
+$('#run-btn').onclick = async () => {
+  const a = S.snap && S.snap.a_state; if (!a || !a.mission_id) return;
+  try { const r = await api('/api/mission/run', { method: 'POST', body: JSON.stringify({ mission_id: a.mission_id }) });
+        msg(r.outcome === 'accepted' ? `미션 실행 허용됨${r.reason ? ` (${r.reason})` : ''}` : `미션 실행 거부: ${r.reason}`, r.outcome === 'accepted'); }
+  catch (e) { msg(e.message); }
+};
 
 $('#recovery-toggle').onclick = async () => {
   const on = !(S.snap && S.snap.a_state && S.snap.a_state.recovery_required);
@@ -221,6 +237,8 @@ $('#recovery-toggle').onclick = async () => {
   $('#mock-tools').hidden = S.config.run_mode !== 'MOCK';
   const opts = S.config.waypoints.map((w) => `<option title="${esc(w.role)}">${esc(w.id)}</option>`).join('');
   $('#job-form [name=pickup]').innerHTML = opts; $('#job-form [name=dropoff]').innerHTML = opts;
-  $('#job-form [name=dropoff]').selectedIndex = 1;
+  $('#job-form [name=pickup]').value = S.config.waypoints.find((w) => w.id !== 'HOME')?.id || S.config.waypoints[0].id;
+  $('#job-form [name=dropoff]').selectedIndex = S.config.waypoints.length - 1;
+  $('#plan-src').textContent = `시작 지점 ${S.config.start_waypoint} · 비용표 ${S.config.cost_revision} (설정값, A와 합의 전)`;
   connect();
 })();

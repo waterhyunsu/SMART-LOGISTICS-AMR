@@ -32,11 +32,11 @@ class SlowFirstThenAccept:
             raise self.late_error
         return accepted
 
-    async def send_handoff(self, event_id, mission_id, step_id):
+    async def handoff(self, event_id, mission_id, step_id):
         return await self._call("accepted")
 
-    async def submit_job(self, request_id, pickup, dropoff):
-        return await self._call({"outcome": "accepted", "job_id": "JOB-X", "mission_id": None, "reason": ""})
+    async def register_jobs(self, steps, start_waypoint_id, cost_revision):
+        return await self._call(1)
 
 
 async def _until(cond):
@@ -72,16 +72,17 @@ def test_late_timeout_does_not_overwrite_accepted_job(tmp_path):
     async def scenario():
         a = SlowFirstThenAccept(MissionTimeout("늦게 도착한 타임아웃"))
         svc = RequestService(Database(tmp_path / "t.db"), a)
-        first = asyncio.create_task(svc.request_job("HOME", "A"))
+        first = asyncio.create_task(svc.request_job("PICKUP_1", "DROP_1"))
         await _until(lambda: a.calls == 1)
         rid = svc.list_job_requests()[0]["request_id"]
 
         again = await svc._send_job(rid)
-        assert again["status"] == "ACCEPTED" and again["job_id"] == "JOB-X"
+        assert again["status"] == "ACCEPTED"
+        jid = again["job_id"]
 
         a.gate.set()
         late = await first
-        assert late["status"] == "ACCEPTED" and late["job_id"] == "JOB-X" and late["last_error"] is None
+        assert late["status"] == "ACCEPTED" and late["job_id"] == jid and late["last_error"] is None
 
     asyncio.run(scenario())
 
@@ -101,14 +102,14 @@ def test_mock_restart_with_same_db_gets_new_ids_and_new_handoff_is_not_blocked(m
     # 1회차 MOCK 서버: 인계까지 수락
     a1 = MockMissionManager(load_waypoints(), auto_run=False)
     http1 = make_client(a1)
-    mid1, step1 = waiting_step(http1, a1, pickup="HOME", dropoff="A")
+    mid1, step1 = waiting_step(http1, a1, pickup="PICKUP_1", dropoff="DROP_1")
     assert http1.post("/api/handoffs", json={"mission_id": mid1, "step_id": step1}).json()["status"] == "ACCEPTED"
     http1.__exit__(None, None, None)
 
     # 같은 DB로 MOCK 서버 재시작 (A 대역도 새로 시작)
     a2 = MockMissionManager(load_waypoints(), auto_run=False)
     http2 = make_client(a2)
-    mid2, step2 = waiting_step(http2, a2, pickup="HOME", dropoff="A")
+    mid2, step2 = waiting_step(http2, a2, pickup="PICKUP_1", dropoff="DROP_1")
 
     assert a1.run_id != a2.run_id
     assert mid2 != mid1 and step2 != step1                    # 이전 기록과 ID가 겹치지 않음

@@ -34,7 +34,7 @@
       <span><i class="lg plan"></i>남은 계획</span>
       <span><i class="lg target"></i>현재 목표</span>
     </div>
-    <div class="muted small">지점 좌표는 임시값 [미확인 · P-014]</div>
+    <div class="muted small">지점: A·C·D 공용 tb3_sandbox 좌표 (화면 표시용 · P-014)</div>
   </section>
 
   <section class="card area-mission">
@@ -52,11 +52,12 @@
       <span class="muted">→</span>
       <label>전달 <select name="dropoff"></select></label>
       <button type="submit">작업 요청</button>
-      <button type="button" id="start-btn" class="primary">미션 시작 요청</button>
+      <button type="button" id="run-btn" class="primary" title="A가 준비 상태를 확인해 실행을 허용합니다 (INTERFACES §11.1)">미션 실행 요청</button>
     </form>
     <div id="form-msg" class="small muted">상태는 A(Mission Manager)가 확정한 값만 표시합니다</div>
+    <div id="plan-src" class="small muted"></div>
     <table id="job-table">
-      <thead><tr><th>Job</th><th>경로</th><th>수거 단계</th><th>전달 단계</th><th>미션</th></tr></thead>
+      <thead><tr><th>Job</th><th>경로</th><th>수거 단계</th><th>전달 단계</th><th>Job 상태</th></tr></thead>
       <tbody></tbody>
     </table>
   </section>

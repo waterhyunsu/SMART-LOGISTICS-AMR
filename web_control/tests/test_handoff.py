@@ -1,6 +1,6 @@
 """E 가이드 완료 테스트: 응답 유실 뒤 재전송, 동일 키·다른 단계 충돌, 재시작 후 미확인 요청 복구,
 같은 인계의 중복 반영 방지. 모두 임시 SQLite + A 테스트 대역(MOCK)."""
-from conftest import waiting_step
+from conftest import run_mission, waiting_step
 
 
 def test_normal_handoff_is_recorded_then_accepted(make_client, mock_a):
@@ -51,13 +51,14 @@ def test_same_event_id_on_different_step_is_conflict(make_client, mock_a):
     assert rec["status"] == "ACCEPTED"
 
     # 같은 event_id 가 다른 단계로 기록된 상황 (예: 잘못된 복구) 을 만들고 재전송
+    other = step.replace("-PICKUP", "-DROPOFF")
     db = http.app.state.db
     db.execute("INSERT INTO handoff_events(event_id, mission_id, step_id, status, created_at, updated_at) "
-               "VALUES ('evt-dup', ?, 'JOB-001-DROPOFF', 'UNCONFIRMED', 'x', 'x')", (mid,))
+               "VALUES ('evt-dup', ?, ?, 'UNCONFIRMED', 'x', 'x')", (mid, other))
     mock_a.handoff_results["evt-dup"] = (step, "accepted")   # A 원장에는 이 키가 다른 단계로 기록됨
     out = http.post("/api/handoffs/evt-dup/retry").json()
     assert out["status"] == "CONFLICT"
-    assert "JOB-001-DROPOFF" not in mock_a.completed
+    assert other not in mock_a.completed
 
 
 def test_restart_recovers_unconfirmed_handoff(make_client, mock_a, db_path):
@@ -111,9 +112,9 @@ def test_second_press_after_accept_is_blocked(make_client, mock_a):
 
 def test_handoff_for_step_not_waiting_is_rejected_and_new_event_allowed(make_client, mock_a):
     http = make_client(mock_a)
-    http.post("/api/job-requests", json={"pickup": "B", "dropoff": "C"})
-    http.post("/api/mission/start")
-    step = mock_a.start_next()                       # 이동 중 (아직 도착 전)
+    http.post("/api/job-requests", json={"pickup": "PICKUP_1", "dropoff": "DROP_1"})
+    run_mission(http, mock_a)
+    step = mock_a.claim_next_goal()["step_id"]       # 이동 중 (아직 도착 전)
     mid = mock_a.mission_id
 
     first = http.post("/api/handoffs", json={"mission_id": mid, "step_id": step}).json()
@@ -135,7 +136,7 @@ def test_retry_of_final_record_does_not_resend(make_client, mock_a):
 
 def test_a_unreachable_is_unconfirmed_not_failed(make_client, mock_a):
     class Broken(type(mock_a)):
-        async def send_handoff(self, *a, **k):
+        async def handoff(self, *a, **k):
             raise ConnectionError("A 연결 끊김")
     a = Broken(mock_a.wps, auto_run=False)
     http = make_client(a)
@@ -191,3 +192,77 @@ def test_e_restart_resends_recovery_pending(make_client, mock_a):
     after = http2.get("/api/handoffs").json()[0]
     assert after["event_id"] == rec["event_id"] and after["status"] == "ACCEPTED"
     assert mock_a.handoff_accept_count[step] == 1
+
+
+def test_empty_ids_are_refused_by_e_before_sending(make_client, mock_a):
+    """A는 빈 ID 인계를 ValueError로 거절한다. E는 보내기 전에 422로 막고 기록도 남기지 않는다."""
+    http = make_client(mock_a)
+    mid, step = waiting_step(http, mock_a)
+    for body in ({"mission_id": "", "step_id": step}, {"mission_id": mid, "step_id": "  "}):
+        assert http.post("/api/handoffs", json=body).status_code == 422
+    assert http.get("/api/handoffs").json() == []
+
+
+def test_last_dropoff_away_from_home_shows_home_return_then_completed(make_client, mock_a):
+    """A와 같이: 마지막 하역이 HOME이 아니면 returning_home → HOME 복귀 목표(step_id 없음) → completed."""
+    http = make_client(mock_a)
+    mid, step = waiting_step(http, mock_a)
+    assert http.post("/api/handoffs", json={"mission_id": mid, "step_id": step}).json()["status"] == "ACCEPTED"
+    goal = mock_a.claim_next_goal()
+    assert mock_a.arrive(goal["step_id"])
+    assert http.post("/api/handoffs", json={"mission_id": mid, "step_id": goal["step_id"]}).json()["status"] == "ACCEPTED"
+
+    a = http.get("/api/state").json()["a_state"]
+    assert a["mission_status"] == "returning_home" and a["current_goal"] is None
+    home = mock_a.claim_next_goal()
+    assert home["step_id"] is None and home["waypoint_id"] == "HOME"
+    assert http.get("/api/state").json()["a_state"]["current_goal"]["step_id"] is None
+    mock_a.arrive_home()
+    a = http.get("/api/state").json()["a_state"]
+    assert a["mission_status"] == "completed" and [j["status"] for j in a["jobs"]] == ["completed"]
+    r = http.post("/api/job-requests", json={"pickup": "PICKUP_1", "dropoff": "DROP_1"}).json()
+    assert r["status"] == "REJECTED"   # A: 완료 후 등록은 입력 오류
+
+
+def test_sync_resends_unconfirmed_when_a_already_completed_the_step(make_client, mock_a):
+    """E 가이드 2: E는 결과 미확인, A는 이미 완료 → 같은 event_id로 다시 보내 A 결과로 맞춤. 반영은 1회."""
+    http = make_client(mock_a)
+    mid, step = waiting_step(http, mock_a)
+    mock_a.drop_next_ack = True
+    rec = http.post("/api/handoffs", json={"mission_id": mid, "step_id": step}).json()
+    assert rec["status"] == "UNCONFIRMED"
+    svc = http.app.state.svc
+
+    import asyncio
+    a_state = mock_a._snapshot()
+    assert next(s for s in a_state["steps"] if s["step_id"] == step)["status"] == "completed"
+    assert asyncio.run(svc.sync_with_a(a_state)) == 1
+    after = svc.get_handoff(rec["event_id"])
+    assert after["status"] == "ACCEPTED" and after["attempts"] == 2
+    assert mock_a.handoff_accept_count[step] == 1
+    assert asyncio.run(svc.sync_with_a(mock_a._snapshot())) == 0   # 맞춰진 뒤에는 보내지 않음
+
+
+def test_sync_leaves_unprocessed_unconfirmed_alone(make_client, mock_a):
+    """A가 처리하지 않은(단계 미완료) 미확인 기록은 자동으로 보내지 않는다 → 작업자가 재전송."""
+    http = make_client(mock_a)
+    mid, step = waiting_step(http, mock_a)
+    mock_a.timeout_next = True
+    rec = http.post("/api/handoffs", json={"mission_id": mid, "step_id": step}).json()
+    import asyncio
+    assert asyncio.run(http.app.state.svc.sync_with_a(mock_a._snapshot())) == 0
+    assert http.app.state.svc.get_handoff(rec["event_id"])["status"] == "UNCONFIRMED"
+
+
+def test_sync_resends_recovery_pending_after_a_recovers(make_client, mock_a):
+    http = make_client(mock_a)
+    mid, step = waiting_step(http, mock_a)
+    mock_a.recovery_required = True
+    rec = http.post("/api/handoffs", json={"mission_id": mid, "step_id": step}).json()
+    assert rec["status"] == "RECOVERY_PENDING"
+    import asyncio
+    svc = http.app.state.svc
+    assert asyncio.run(svc.sync_with_a(mock_a._snapshot())) == 0      # 아직 복구 중 → 보내지 않음
+    mock_a.recovery_required = False
+    assert asyncio.run(svc.sync_with_a(mock_a._snapshot())) == 1
+    assert svc.get_handoff(rec["event_id"])["status"] == "ACCEPTED"

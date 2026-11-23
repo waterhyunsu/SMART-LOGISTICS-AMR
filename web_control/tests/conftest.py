@@ -28,7 +28,7 @@ def make_client(db_path):
     opened = []
 
     def _make(a):
-        c = TestClient(create_app(db_path=db_path, client=a, run_mode="MOCK"))
+        c = TestClient(create_app(db_path=db_path, client=a, run_mode="MOCK", auto_sync=False))
         c.__enter__()
         opened.append(c)
         return c
@@ -38,11 +38,18 @@ def make_client(db_path):
         c.__exit__(None, None, None)
 
 
-def waiting_step(http, a, pickup="B", dropoff="C"):
-    """Job 하나를 등록·미션 시작·첫 단계 도착까지 진행하고 인계 대기 단계 ID를 돌려준다."""
+def run_mission(http, a):
+    r = http.post("/api/mission/run", json={"mission_id": a.mission_id})
+    assert r.status_code == 200 and r.json()["outcome"] == "accepted", r.text
+
+
+def waiting_step(http, a, pickup="PICKUP_1", dropoff="DROP_1"):
+    """주문 하나를 등록하고 A 대역에서 첫 목표를 선점·도착시킨 뒤 인계 대기 단계 ID를 돌려준다.
+    흐름: register_jobs → (계획 승인) → 미션 실행 요청(문서 §11.1) → claim_next_goal → D 도착 보고 → 인계 대기."""
     r = http.post("/api/job-requests", json={"pickup": pickup, "dropoff": dropoff})
     assert r.status_code == 201 and r.json()["status"] == "ACCEPTED"
-    assert http.post("/api/mission/start").status_code == 200
-    step = a.start_next()
-    assert a.arrive(step)
-    return a.mission_id, step
+    run_mission(http, a)
+    goal = a.claim_next_goal()
+    assert goal and goal["step_id"]
+    assert a.arrive(goal["step_id"])
+    return a.mission_id, goal["step_id"]

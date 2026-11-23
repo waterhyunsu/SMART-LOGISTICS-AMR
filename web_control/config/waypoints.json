@@ -1,10 +1,9 @@
 {
-  "note": "[미확인] 화면 표시용 임시 좌표. 실제 Pose는 DECISIONS P-014(C·D 확인) 결과로 교체한다.",
+  "source": "D 공용 지점 파일 ros2_ws/src/amr_navigation/config/waypoints.yaml (feat/d-shared-waypoints, 2026-11-23, main 반영 전) — tb3_sandbox 지도, map 좌표계",
+  "note": "E는 좌표를 정하지 않는다. A·C·D 공용 파일과 같은 ID·좌표를 화면 표시용으로만 복사해 둔다. 공용 파일이 main에 들어오거나 A가 상태로 지점 목록을 주면 그쪽을 읽도록 바꾼다 (P-014).",
   "waypoints": [
-    {"id": "HOME", "x": -2.0,  "y": -0.5,  "role": "물품 초기 적재, 최종 하역 및 복귀"},
-    {"id": "A",    "x": -0.55, "y": 0.55,  "role": "초기 물품 전달"},
-    {"id": "B",    "x": 0.55,  "y": 0.55,  "role": "물품 수거"},
-    {"id": "C",    "x": 0.55,  "y": -0.55, "role": "B에서 수거한 물품 전달"},
-    {"id": "D",    "x": -0.55, "y": -0.55, "role": "HOME으로 회수할 물품 수거"}
+    {"id": "HOME",     "x": -2.0,  "y": -0.5, "yaw": 0.0, "role": "로봇 시작 위치 (initial_pose)"},
+    {"id": "PICKUP_1", "x": -0.55, "y": -0.5, "yaw": 0.0, "role": "수거 지점 (PR #14 SIM 주행 확인, SIM_P1)"},
+    {"id": "DROP_1",   "x": 0.55,  "y": 0.5,  "yaw": 0.0, "role": "전달 지점 후보 (비용표 경로 확인 후 확정)"}
   ]
 }
