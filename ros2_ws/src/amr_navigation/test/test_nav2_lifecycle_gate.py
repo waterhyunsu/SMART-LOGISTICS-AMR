@@ -162,3 +162,50 @@ def test_refusal_while_inactive_then_explicit_new_attempt(tmp_path, monkeypatch)
         spin_for(executor, 0.5)
         assert nav_log.read_text().count('[GOAL]') == 1
         assert d_log.read_text().count('[SEND]') == 1
+
+
+def test_late_active_lifecycle_response_is_ignored(tmp_path, monkeypatch):
+    """get_state 요청 후 2초를 넘겨 도착한 ACTIVE 는 준비로 보지 않는다."""
+    monkeypatch.setenv('ROS_AUTOMATIC_DISCOVERY_RANGE', 'LOCALHOST')
+    namespace = '/gate2_' + uuid4().hex
+    with ExitStack() as stack, client_node(namespace) as (node, executor):
+        nav_log = run_process(stack, tmp_path, namespace, 'server',
+                              ['delay_sec:=0.2', 'lifecycle_state:=active',
+                               'get_state_delay_sec:=2.2'])
+        d_log = run_process(stack, tmp_path, namespace, 'd', [])
+        dispatch = node.create_client(DispatchGoal, 'dispatch_goal')
+        until(executor, lambda: ('get_state late response' in d_log.read_text()
+                                 or 'get_state timeout' in d_log.read_text()))
+
+        late = context()
+        response = call(executor, dispatch, DispatchGoal.Request(**late))
+        assert response.result == DispatchGoal.Response.RESULT_NOT_READY
+        assert 'bt_navigator not active' in response.reason
+        for _ in range(2):
+            observed = lookup(node, executor, late)
+            assert observed.observation == LookupGoal.Response.OBS_UNKNOWN
+            assert not observed.no_pending_dispatch
+            spin_for(executor, 1.5)
+
+        other = context()
+        response = call(executor, dispatch, DispatchGoal.Request(**other))
+        assert response.result == DispatchGoal.Response.RESULT_NOT_READY
+        assert 'lifecycle: active' not in d_log.read_text()
+        assert '[GOAL]' not in nav_log.read_text()
+        assert '[SEND]' not in d_log.read_text()
+
+        # 응답이 다시 제때 오면 정상 복구: 거절했던 요청은 REFUSED_BEFORE_SEND 로 확인된다.
+        client = node.create_client(SetParameters, 'mock_nav2_server/set_parameters')
+        request = SetParameters.Request()
+        request.parameters = [Parameter('get_state_delay_sec', value=0.0).to_parameter_msg()]
+        assert all(r.successful for r in call(executor, client, request).results)
+        deadline = monotonic() + 12
+        while True:
+            observed = lookup(node, executor, late)
+            if observed.observation == LookupGoal.Response.OBS_REFUSED_BEFORE_SEND:
+                break
+            assert observed.observation == LookupGoal.Response.OBS_UNKNOWN
+            assert monotonic() < deadline, 'D did not recover after timely get_state responses'
+            spin_for(executor, 0.3)
+        assert observed.no_pending_dispatch
+        assert '[GOAL]' not in nav_log.read_text()
