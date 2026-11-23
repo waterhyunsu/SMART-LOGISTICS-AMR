@@ -188,6 +188,50 @@ def test_d_exits_after_acceptance(tmp_path, monkeypatch):
         assert adapter.approve_retry(lookup, explicitly_approved=True) is None
 
 
+def test_fast_d_restart_holds_the_same_goal(tmp_path, monkeypatch):
+    monkeypatch.setenv('ROS_AUTOMATIC_DISCOVERY_RANGE', 'LOCALHOST')
+    namespace = '/gate1_' + uuid4().hex
+    with ExitStack() as stack, manager(tmp_path / 'mission.sqlite', namespace) as (node, executor):
+        _, nav_log = run_process(stack, tmp_path, namespace, 'server', ['delay_sec:=15.0'])
+        d_args = ['wait_for_nav2_before_dispatch:=true']
+        stop_d, first_log = run_process(stack, tmp_path, namespace, 'd', d_args)
+        adapter = NavigationServices(node, timeout_sec=3.0)
+        until(executor, adapter.dispatch_client.service_is_ready)
+        node.state.add_steps(job('one'))
+        assert node.state.apply(mock_optimizer(node.state.request('HOME', 'r1')))
+        goal = node.claim_next_goal()
+        assert adapter.dispatch(goal)
+        until(executor, lambda: 'ACCEPTED → A handled=True' in first_log.read_text())
+        goal_id = node.state.nav_goal_id
+
+        # Overlap discovery so the A client never sees both D services disappear.
+        restarted = tmp_path / 'restarted'
+        restarted.mkdir()
+        _, restarted_log = run_process(stack, restarted, namespace, 'd', d_args)
+        until(executor, lambda: 'dispatch_goal 서비스 공개' in restarted_log.read_text())
+        stop_d()
+        assert adapter.dispatch_client.service_is_ready()
+        assert adapter.lookup_client.service_is_ready()
+        until(executor, lambda: node.state.recovery_required, timeout=8)
+        assert any('[lookup_goal]' in line and goal_id in line and '→ UNKNOWN' in line
+                   for line in restarted_log.read_text().splitlines())
+        assert node.current_goal() == goal and node.state.nav_goal_id == goal_id
+        assert node.state.completed == set() and not node.state.waiting
+
+        lookup = adapter.lookup()
+        assert lookup is not None
+        until(executor, lambda: adapter.last_report is not None)
+        assert adapter.last_report.observation is NavigationObservation.UNKNOWN
+        assert not adapter.last_report.no_pending_dispatch
+        assert adapter.approve_retry(lookup, explicitly_approved=True) is None
+        assert node.claim_next_goal() is None
+        assert not adapter.dispatch(goal)
+        assert f'받은 UUID={goal_id}' in nav_log.read_text()
+        assert nav_log.read_text().count('[GOAL]') == 1
+        assert first_log.read_text().count('[SEND]') == 1
+        assert '[SEND]' not in restarted_log.read_text()
+
+
 @pytest.mark.parametrize('drop_receipt', [False, True], ids=['confirmed-refusal', 'lost-receipt'])
 def test_retry_after_not_ready_then_nav2_start(tmp_path, monkeypatch, drop_receipt):
     monkeypatch.setenv('ROS_AUTOMATIC_DISCOVERY_RANGE', 'LOCALHOST')
