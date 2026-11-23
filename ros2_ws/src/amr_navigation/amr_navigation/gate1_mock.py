@@ -17,6 +17,8 @@
 Nav2 준비 (Gate 2):
   - navigate_to_pose 액션 서버 발견 + bt_navigator lifecycle 이 active 로 확인된 지
     2초 이내일 때만 준비로 본다 (nav2_lifecycle_node 파라미터, '' 이면 확인 생략)
+  - get_state 요청 후 2초를 넘겨 도착한 응답은 ACTIVE 여도 버린다 (늦은 응답 = 미확인)
+  - active 확인 시각은 응답 도착 시각이 아니라 요청을 보낸 시각으로 기록한다
   - 준비가 아니면 송신하지 않고 NOT_READY, REFUSED_BEFORE_SEND 도 반환하지 않는다
   - wait_for_nav2_before_dispatch:=true 이면 위 조건이 처음 충족될 때 dispatch_goal 을 공개
 """
@@ -150,7 +152,8 @@ class Nav2Dispatcher:
 
     def __init__(self, node, waypoints, action_name='navigate_to_pose', frame_id='map',
                  accept_timeout_sec=5.0, on_event=None, fault_result_error=None,
-                 lifecycle_node='bt_navigator', lifecycle_max_age_sec=2.0):
+                 lifecycle_node='bt_navigator', lifecycle_max_age_sec=2.0,
+                 lifecycle_timeout_sec=2.0):
         self.node = node
         self.log = node.get_logger()
         self.waypoints = dict(waypoints)
@@ -164,6 +167,7 @@ class Nav2Dispatcher:
         # Nav2 lifecycle (Gate 2): 서비스 콜백 안에서 기다릴 수 없으므로 주기 조회 후 캐시
         self.lifecycle_node = lifecycle_node or ''
         self.lifecycle_max_age = lifecycle_max_age_sec
+        self.lifecycle_timeout = lifecycle_timeout_sec
         self._lc_label = 'unknown'
         self._lc_active_at = None
         self._lc_future = None
@@ -176,7 +180,7 @@ class Nav2Dispatcher:
     # ---------- Nav2 lifecycle ----------
     def _poll_lifecycle(self):
         if self._lc_future is not None:
-            if time.monotonic() - self._lc_sent_at > 2.0:
+            if time.monotonic() - self._lc_sent_at > self.lifecycle_timeout:
                 self.state_client.remove_pending_request(self._lc_future)
                 self._lc_future = None
                 self._set_lifecycle(None, 'get_state timeout')
@@ -192,13 +196,20 @@ class Nav2Dispatcher:
         if future is not self._lc_future:
             return
         self._lc_future = None
+        elapsed = time.monotonic() - self._lc_sent_at
+        if elapsed > self.lifecycle_timeout:
+            # 기한을 넘긴 응답은 내용과 무관하게 버린다 (그 사이 상태가 바뀌었을 수 있음)
+            self.log.warn(f'[NAV2] {self.lifecycle_node} get_state 응답 {elapsed:.2f}s 지연 → 무시')
+            self._set_lifecycle(None, 'get_state late response')
+            return
         try:
             state = future.result().current_state
         except Exception as exc:  # noqa: BLE001
             self._set_lifecycle(None, f'get_state error: {exc}')
             return
         if state.id == State.PRIMARY_STATE_ACTIVE:
-            self._set_lifecycle(time.monotonic(), 'active')
+            # 응답 도착 시각이 아니라 요청 시각 기준으로 신선도를 계산
+            self._set_lifecycle(self._lc_sent_at, 'active')
         else:
             self._set_lifecycle(None, state.label or f'state {state.id}')
 
@@ -689,6 +700,7 @@ class MockNav2Server(Node):
         self.declare_parameter('mode', 'succeed')
         self.declare_parameter('delay_sec', 3.0)
         self.declare_parameter('lifecycle_state', 'active')
+        self.declare_parameter('get_state_delay_sec', 0.0)
         self.create_service(GetState, 'bt_navigator/get_state', self.on_get_state,
                             callback_group=ReentrantCallbackGroup())
         self.server = ActionServer(
@@ -702,6 +714,9 @@ class MockNav2Server(Node):
         return str(self.get_parameter('mode').value)
 
     def on_get_state(self, request, response):
+        delay = float(self.get_parameter('get_state_delay_sec').value)
+        if delay > 0.0:
+            time.sleep(delay)
         label = str(self.get_parameter('lifecycle_state').value)
         ids = {'unconfigured': State.PRIMARY_STATE_UNCONFIGURED,
                'inactive': State.PRIMARY_STATE_INACTIVE,
