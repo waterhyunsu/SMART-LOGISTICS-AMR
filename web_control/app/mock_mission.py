@@ -28,7 +28,7 @@ A와 다른 점 (대역이라 단순화):
 import asyncio
 import math
 import time
-import uuid
+from uuid import uuid4
 from graphlib import CycleError, TopologicalSorter
 
 from .mission_client import DROPOFF, PICKUP, MissionInputError, MissionRecoveryPending, MissionTimeout
@@ -37,12 +37,9 @@ ROBOT_SPEED = 0.22  # m/s
 
 
 def _new_run_id() -> str:
-    """시작 시각(초, 36진수) + 무작위 2자리. 같은 DB를 쓰는 이전 실행과 겹치지 않게 한다."""
-    t, digits, out = int(time.time()), "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", ""
-    while t:
-        t, r = divmod(t, 36)
-        out = digits[r] + out
-    return out + uuid.uuid4().hex[:2].upper()
+    """실행마다 전체 UUID(16진수 32자리)를 쓴다. 같은 DB로 재시작한 이전 실행과 미션 ID가 겹치지 않게 한다.
+    (시각·짧은 무작위 조합은 같은 초에 재시작하면 앞자리가 겹칠 수 있어 쓰지 않는다 — PR #18 리뷰)"""
+    return uuid4().hex.upper()
 
 
 class MockMissionManager:

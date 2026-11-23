@@ -116,3 +116,35 @@ def test_mock_restart_with_same_db_gets_new_ids_and_new_handoff_is_not_blocked(m
     r = http2.post("/api/handoffs", json={"mission_id": mid2, "step_id": step2})
     assert r.status_code == 201 and r.json()["status"] == "ACCEPTED"   # 409로 막히지 않음
     assert len(http2.get("/api/handoffs").json()) == 2        # 이전 기록은 그대로 보존
+
+
+def test_restart_in_same_second_with_same_uuid_prefix_is_not_blocked(make_client, monkeypatch):
+    """PR #18 리뷰: 같은 DB로 같은 초에 재시작하고 UUID 앞 두 자리가 겹쳐도 새 인계가 409로 막히지 않아야 한다.
+    실행 ID는 전체 UUID를 쓰므로 앞자리가 같아도 미션 ID가 달라진다."""
+    import uuid
+
+    import app.mock_mission as mm
+
+    fixed = [uuid.UUID("ab000000-0000-4000-8000-000000000001"),   # 앞 두 자리 'ab' 동일, 나머지만 다름
+             uuid.UUID("ab000000-0000-4000-8000-000000000002")]
+    monkeypatch.setattr(mm, "uuid4", lambda: fixed.pop(0))          # MOCK 실행 ID에만 적용 (요청 ID 생성은 그대로)
+    monkeypatch.setattr(mm.time, "time", lambda: 1_795_000_000.0)    # 같은 초에 재시작 (예전 방식은 시각을 썼음)
+
+    a1 = MockMissionManager(load_waypoints(), auto_run=False)
+    a2_run_id_source = fixed[0]
+    http1 = make_client(a1)
+    mid1, step1 = waiting_step(http1, a1)
+    assert http1.post("/api/handoffs", json={"mission_id": mid1, "step_id": step1}).json()["status"] == "ACCEPTED"
+    http1.__exit__(None, None, None)
+
+    a2 = MockMissionManager(load_waypoints(), auto_run=False)       # 같은 DB, 같은 초, 같은 앞 두 자리
+    http2 = make_client(a2)
+    mid2, step2 = waiting_step(http2, a2)
+
+    r = http2.post("/api/handoffs", json={"mission_id": mid2, "step_id": step2})
+    assert r.status_code == 201, r.text                                        # 409로 막히지 않음
+    assert r.json()["status"] == "ACCEPTED"
+    assert len(http2.get("/api/handoffs").json()) == 2                         # 이전 기록은 보존
+    assert mid1 != mid2
+    assert a2.run_id == a2_run_id_source.hex.upper() and len(a2.run_id) == 32   # 전체 UUID 사용
+    assert a1.run_id[:2] == a2.run_id[:2] == "AB"                              # 앞 두 자리는 실제로 겹침

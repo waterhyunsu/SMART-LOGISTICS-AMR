@@ -39,7 +39,7 @@ curl -s -X POST localhost:8000/api/job-requests -H 'Content-Type: application/js
 ```
 
 ```json
-{"request_id":"req-5f5a668dbc0a","pickup":"PICKUP_1","dropoff":"DROP_1","status":"ACCEPTED","job_id":"JOB-5F5A668D","mission_id":"MISSION-MOCK-TOXYERBB", ...}
+{"request_id":"req-0e109d77f586","pickup":"PICKUP_1","dropoff":"DROP_1","status":"ACCEPTED","job_id":"JOB-0E109D77","mission_id":"MISSION-MOCK-AB8805F648834D45B72B92B7D74B8944", ...}
 ```
 
 미션 실행 요청 (`MID`는 `/api/state`에서 읽는다):
@@ -50,7 +50,7 @@ curl -s -X POST localhost:8000/api/mission/run -H 'Content-Type: application/jso
 ```
 
 ```json
-{"mission_id":"MISSION-MOCK-TOXYERBB","outcome":"accepted","reason":""}
+{"mission_id":"MISSION-MOCK-AB8805F648834D45B72B92B7D74B8944","outcome":"accepted","reason":""}
 ```
 
 - 등록된 작업이 없거나, 완료된 미션이거나, A가 복구 확인 중이거나, 준비 상태가 정상이 아니면 `"outcome":"rejected"`와 사유가 온다.
@@ -58,10 +58,10 @@ curl -s -X POST localhost:8000/api/mission/run -H 'Content-Type: application/jso
 - **A 코드(main 92ce3eb)에는 아직 미션 실행 요청이 없다.** 문서 기준으로 MOCK 대역에 넣었고, A 구현이 올라오면 호출 이름·결과 값을 맞춘다.
 - E는 주문 1건을 A의 `TaskStep` 두 개로 보낸다: `<job_id>-PICKUP`(수거)과 `<job_id>-DROPOFF`(전달, 수거가 선행 조건).
   A `register_jobs(steps, start_waypoint_id, cost_revision)`과 같은 모양이다.
-- 지점은 `config/waypoints.json`의 `HOME`, `PICKUP_1`, `DROP_1` (D 공용 지점 파일 `feat/d-shared-waypoints`의 tb3_sandbox 좌표를 화면 표시용으로 복사, P-014).
+- 지점은 `config/waypoints.json`의 `HOME`, `PICKUP_1`, `DROP_1` (D 공용 지점 파일 `ros2_ws/src/amr_navigation/config/waypoints.yaml`(main 반영)의 tb3_sandbox 좌표를 화면 표시용으로 복사, P-014).
 - `start_waypoint_id`·`cost_revision`은 환경변수 `START_WAYPOINT`(기본 `HOME`)·`COST_REVISION`(기본 `mock-table`)로 준다. 누가 정할지는 A와 합의 전.
-- MOCK 미션 ID는 `MISSION-MOCK-<run_id>`이며 `run_id`(시작 시각 + 무작위)는 서버 실행마다 바뀐다. 같은 DB로 재시작해도
-  이전 인계 기록과 겹치지 않게 하기 위함이다. 그래서 아래 명령은 ID를 직접 쓰지 않고 `/api/state`에서 읽는다.
+- MOCK 미션 ID는 `MISSION-MOCK-<run_id>`이며 `run_id`는 서버 실행마다 새로 만든 전체 UUID(16진수 32자리)다. 같은 DB로
+  같은 초에 재시작해도 이전 인계 기록과 겹치지 않게 하기 위함이다. 그래서 아래 명령은 ID를 직접 쓰지 않고 `/api/state`에서 읽는다.
 
 ### 3. 인계 요청 1건 보내고 확인
 
@@ -72,7 +72,7 @@ read MID STEP WAIT < <(curl -s localhost:8000/api/state | python3 -c 'import sys
 ```
 
 ```text
-MISSION-MOCK-TOXYERBB JOB-5F5A668D-PICKUP True
+MISSION-MOCK-AB8805F648834D45B72B92B7D74B8944 JOB-0E109D77-PICKUP True
 ```
 
 `WAIT`가 `True`이면 인계를 보낸다. `False`이면 몇 초 뒤 위 명령을 다시 실행한다.
@@ -82,7 +82,7 @@ curl -s -X POST localhost:8000/api/handoffs -H 'Content-Type: application/json' 
 ```
 
 ```json
-{"event_id":"evt-8fd078dbc232","mission_id":"MISSION-MOCK-TOXYERBB","step_id":"JOB-5F5A668D-PICKUP","status":"ACCEPTED","attempts":1, ...}
+{"event_id":"evt-04e2a36aa6e3","mission_id":"MISSION-MOCK-AB8805F648834D45B72B92B7D74B8944","step_id":"JOB-0E109D77-PICKUP","status":"ACCEPTED","attempts":1, ...}
 ```
 
 `curl -s localhost:8000/api/handoffs`로 E가 기록한 인계 이력을 확인한다. 화면에서는 오른쪽 위 "현재 미션"의 **인계 완료** 버튼과 오른쪽 아래 "E 발신 기록" 표로 같은 흐름을 볼 수 있다.
@@ -217,6 +217,7 @@ python3 -m pytest -q tests      # lark 오류가 나면: pip install lark
 | `test_late_timeout_does_not_overwrite_accepted_job` | 같은 경우 Job 요청의 `ACCEPTED`·`job_id`를 덮어쓰지 않음 |
 | `test_open_record_still_becomes_unconfirmed` | 아직 결과가 없는 기록은 정상적으로 `UNCONFIRMED`가 됨 |
 | `test_mock_restart_with_same_db_gets_new_ids_and_new_handoff_is_not_blocked` | 같은 DB로 MOCK 재시작 시 새 미션·단계 ID가 이전 기록과 겹치지 않고, 새 인계가 409 없이 수락됨 |
+| `test_restart_in_same_second_with_same_uuid_prefix_is_not_blocked` | 같은 DB로 같은 초에 재시작하고 UUID 앞 두 자리가 겹쳐도 미션 ID가 달라 새 인계가 409 없이 수락됨 (실행 ID = 전체 UUID) |
 | `test_restart_recovers_unconfirmed_job_request` | 재시작 후 미확인 Job 요청 복구 |
 | `test_state_view_comes_from_a` | 화면 상태는 A 값 |
 | `test_new_handoff_during_a_recovery_is_recovery_pending` | A 복구 확인 중 새 인계 → `RECOVERY_PENDING`, 복구 후 같은 ID 재전송 → 1회 수락 |
