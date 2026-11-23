@@ -2,16 +2,25 @@
 """D (amr_navigation) Gate 1 MOCK: A<->D 서비스 3개 + Nav2 dispatcher + 가짜 Nav2 서버.
 
 프로세스 (모두 같은 환경변수/네임스페이스에서 실행):
-  server : 가짜 navigate_to_pose      (mode: succeed | abort | reject | no_response)
+  server : 가짜 navigate_to_pose + bt_navigator/get_state
+           (mode: succeed | abort | reject | no_response, lifecycle_state: active | inactive)
   d      : D 노드  - dispatch_goal / lookup_goal 서버, report_goal_event 클라이언트
   a      : A 대역  - dispatch_goal / lookup_goal 클라이언트, report_goal_event 서버
-           시나리오: normal | dup | conflict | abort | uncertain | result_error
+           시나리오: normal | dup | conflict | abort | uncertain | result_error | inactive
   demo   : (PR #12) D 단독 데모        시나리오: normal | dup | cancel | badwp
 
 복구 규칙:
   - 결과 조회 실패(RESULT_ERROR)·상태 불명은 몇 번 조회해도 UNKNOWN 유지
   - NO_ACTIVE_GOAL 은 (1) 해당 UUID 가 종결 상태로 확인되고
                      (2) 다른 실행·지연 송신이 하나도 없을 때만 반환 (no_pending_dispatch=True)
+
+Nav2 준비 (Gate 2):
+  - navigate_to_pose 액션 서버 발견 + bt_navigator lifecycle 이 active 로 확인된 지
+    2초 이내일 때만 준비로 본다 (nav2_lifecycle_node 파라미터, '' 이면 확인 생략)
+  - get_state 요청 후 2초를 넘겨 도착한 응답은 ACTIVE 여도 버린다 (늦은 응답 = 미확인)
+  - active 확인 시각은 응답 도착 시각이 아니라 요청을 보낸 시각으로 기록한다
+  - 준비가 아니면 송신하지 않고 NOT_READY, REFUSED_BEFORE_SEND 도 반환하지 않는다
+  - wait_for_nav2_before_dispatch:=true 이면 위 조건이 처음 충족될 때 dispatch_goal 을 공개
 """
 import math
 import re
@@ -24,6 +33,8 @@ from uuid import uuid4
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped
+from lifecycle_msgs.msg import State
+from lifecycle_msgs.srv import GetState
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -140,7 +151,9 @@ class Nav2Dispatcher:
     """
 
     def __init__(self, node, waypoints, action_name='navigate_to_pose', frame_id='map',
-                 accept_timeout_sec=5.0, on_event=None, fault_result_error=None):
+                 accept_timeout_sec=5.0, on_event=None, fault_result_error=None,
+                 lifecycle_node='bt_navigator', lifecycle_max_age_sec=2.0,
+                 lifecycle_timeout_sec=2.0):
         self.node = node
         self.log = node.get_logger()
         self.waypoints = dict(waypoints)
@@ -151,13 +164,79 @@ class Nav2Dispatcher:
         self.on_event = on_event or (lambda ticket, event, detail, err: None)
         self.fault_result_error = fault_result_error or (lambda: False)
         node.create_timer(0.2, self._check_accept_timeouts)
+        # Nav2 lifecycle (Gate 2): 서비스 콜백 안에서 기다릴 수 없으므로 주기 조회 후 캐시
+        self.lifecycle_node = lifecycle_node or ''
+        self.lifecycle_max_age = lifecycle_max_age_sec
+        self.lifecycle_timeout = lifecycle_timeout_sec
+        self._lc_label = 'unknown'
+        self._lc_active_at = None
+        self._lc_future = None
+        self._lc_sent_at = 0.0
+        if self.lifecycle_node:
+            self.state_client = node.create_client(GetState, f'{self.lifecycle_node}/get_state')
+            node.create_timer(0.5, self._poll_lifecycle,
+                              clock=Clock(clock_type=ClockType.STEADY_TIME))
+
+    # ---------- Nav2 lifecycle ----------
+    def _poll_lifecycle(self):
+        if self._lc_future is not None:
+            if time.monotonic() - self._lc_sent_at > self.lifecycle_timeout:
+                self.state_client.remove_pending_request(self._lc_future)
+                self._lc_future = None
+                self._set_lifecycle(None, 'get_state timeout')
+            return
+        if not self.state_client.service_is_ready():
+            self._set_lifecycle(None, 'get_state service not available')
+            return
+        self._lc_sent_at = time.monotonic()
+        self._lc_future = self.state_client.call_async(GetState.Request())
+        self._lc_future.add_done_callback(self._on_lifecycle)
+
+    def _on_lifecycle(self, future):
+        if future is not self._lc_future:
+            return
+        self._lc_future = None
+        elapsed = time.monotonic() - self._lc_sent_at
+        if elapsed > self.lifecycle_timeout:
+            # 기한을 넘긴 응답은 내용과 무관하게 버린다 (그 사이 상태가 바뀌었을 수 있음)
+            self.log.warn(f'[NAV2] {self.lifecycle_node} get_state 응답 {elapsed:.2f}s 지연 → 무시')
+            self._set_lifecycle(None, 'get_state late response')
+            return
+        try:
+            state = future.result().current_state
+        except Exception as exc:  # noqa: BLE001
+            self._set_lifecycle(None, f'get_state error: {exc}')
+            return
+        if state.id == State.PRIMARY_STATE_ACTIVE:
+            # 응답 도착 시각이 아니라 요청 시각 기준으로 신선도를 계산
+            self._set_lifecycle(self._lc_sent_at, 'active')
+        else:
+            self._set_lifecycle(None, state.label or f'state {state.id}')
+
+    def _set_lifecycle(self, active_at, label):
+        if label != self._lc_label:
+            self.log.info(f'[NAV2] {self.lifecycle_node} lifecycle: {label}')
+        self._lc_label, self._lc_active_at = label, active_at
+
+    def nav2_ready(self):
+        """액션 서버 발견 + (설정 시) lifecycle active 가 최근 2초 안에 확인됐는지."""
+        if not self.client.server_is_ready():
+            return False, 'navigate_to_pose server not ready'
+        if self.lifecycle_node:
+            fresh = (self._lc_active_at is not None
+                     and time.monotonic() - self._lc_active_at <= self.lifecycle_max_age)
+            if not fresh:
+                stale = ', stale' if self._lc_label == 'active' else ''
+                return False, f'{self.lifecycle_node} not active ({self._lc_label}{stale})'
+        return True, 'ok'
 
     # ---------- 전송 전 점검 ----------
     def ready_for(self, goal):
         if goal.waypoint_id not in self.waypoints:
             return False, f'unknown waypoint: {goal.waypoint_id}'
-        if not self.client.server_is_ready():
-            return False, 'navigate_to_pose server not ready'
+        ready, why = self.nav2_ready()
+        if not ready:
+            return False, why
         if self.has_pending():
             return False, 'another dispatch is active, pending or uncertain'
         return True, 'ok'
@@ -324,11 +403,13 @@ class DNavigationNode(Node):
         self.declare_parameter('accept_timeout_sec', 5.0)
         self.declare_parameter('fault_result_error', False)
         self.declare_parameter('wait_for_nav2_before_dispatch', False)
+        self.declare_parameter('nav2_lifecycle_node', 'bt_navigator')
         self.disp = Nav2Dispatcher(
             self, MOCK_WAYPOINTS,
             accept_timeout_sec=float(self.get_parameter('accept_timeout_sec').value),
             on_event=self._on_event,
-            fault_result_error=lambda: bool(self.get_parameter('fault_result_error').value))
+            fault_result_error=lambda: bool(self.get_parameter('fault_result_error').value),
+            lifecycle_node=str(self.get_parameter('nav2_lifecycle_node').value))
         self.contexts = {}        # nav_goal_id -> GoalContext
         self.attempts = {}        # attempt_id -> nav_goal_id
         self.refused_before_send = set()
@@ -348,13 +429,14 @@ class DNavigationNode(Node):
             self._advertise_dispatch_goal()
 
     def _wait_for_nav2(self):
-        if self.disp.client.server_is_ready():
+        if self.disp.nav2_ready()[0]:
             self._advertise_dispatch_goal()
             self._dispatch_startup_timer.cancel()
 
     def _advertise_dispatch_goal(self):
         self.create_service(self.DispatchGoal, 'dispatch_goal', self.on_dispatch)
-        self.get_logger().info('dispatch_goal 서비스 공개')
+        self.get_logger().info(
+            f'dispatch_goal 서비스 공개 (Nav2 확인: {self.disp.lifecycle_node or "lifecycle 생략"})')
 
     STATE_CODES = {'NONE': 0, 'SENT': 1, 'ACTIVE': 2, 'SUCCEEDED': 3, 'ABORTED': 4,
                    'CANCELED': 5, 'REJECTED': 6, 'UNCERTAIN': 7}
@@ -540,6 +622,29 @@ class AMockNode(Node):
         return False
 
 
+def run_inactive(node, ctx, check):
+    """server 를 lifecycle_state:=inactive 로 띄운 상태에서 실행."""
+    log = node.get_logger()
+    check('bt_navigator inactive → dispatch NOT_READY', node.dispatch(ctx) == 'NOT_READY')
+    obs, nop = node.lookup(ctx)
+    check('inactive 동안 lookup → UNKNOWN (no_pending=False)', obs == 'UNKNOWN' and not nop)
+    log.warn('다른 창에서 실행: ros2 param set /mock_nav2_server lifecycle_state active --no-daemon '
+             '(60초 대기)')
+    refused = False
+    end = time.monotonic() + 60.0
+    while time.monotonic() < end:
+        obs, nop = node.lookup(ctx)
+        if obs == 'REFUSED_BEFORE_SEND':
+            refused = bool(nop)
+            break
+        node.wait_event(['__none__'], 1.0)
+    check('active 전환 후 lookup → REFUSED_BEFORE_SEND + no_pending=True', refused)
+    check('예전 요청 재전송 → DUPLICATE (송신 없음)', node.dispatch(ctx) == 'DUPLICATE')
+    retry = replace(ctx, attempt_id=f'attempt-{uuid4().hex[:6]}', nav_goal_id=uuid4().hex)
+    check('새 시도·새 UUID → ACCEPTED', node.dispatch(retry) == 'ACCEPTED')
+    check('새 시도 SUCCEEDED 이벤트 수신', node.wait_event(['SUCCEEDED'], 15.0))
+
+
 def run_a(scenario):
     node = AMockNode()
     log = node.get_logger()
@@ -549,8 +654,12 @@ def run_a(scenario):
     def check(label, ok):
         checks.append((label, ok))
 
-    first = node.dispatch(ctx)
-    check('dispatch → ACCEPTED', first == 'ACCEPTED')
+    if scenario == 'inactive':
+        run_inactive(node, ctx, check)
+        first = None
+    else:
+        first = node.dispatch(ctx)
+        check('dispatch → ACCEPTED', first == 'ACCEPTED')
 
     if scenario == 'dup':
         check('같은 요청 재전송 → DUPLICATE', node.dispatch(ctx) == 'DUPLICATE')
@@ -590,14 +699,32 @@ class MockNav2Server(Node):
         super().__init__('mock_nav2_server')
         self.declare_parameter('mode', 'succeed')
         self.declare_parameter('delay_sec', 3.0)
+        self.declare_parameter('lifecycle_state', 'active')
+        self.declare_parameter('get_state_delay_sec', 0.0)
+        self.create_service(GetState, 'bt_navigator/get_state', self.on_get_state,
+                            callback_group=ReentrantCallbackGroup())
         self.server = ActionServer(
             self, NavigateToPose, 'navigate_to_pose',
             execute_callback=self.execute, goal_callback=self.on_goal,
             cancel_callback=self.on_cancel, callback_group=ReentrantCallbackGroup())
-        self.get_logger().info('MOCK navigate_to_pose 서버 시작 (mode: succeed|abort|reject|no_response)')
+        self.get_logger().info('MOCK navigate_to_pose 서버 시작 (mode: succeed|abort|reject|no_response, '
+                               f'lifecycle_state={self.get_parameter("lifecycle_state").value})')
 
     def mode(self):
         return str(self.get_parameter('mode').value)
+
+    def on_get_state(self, request, response):
+        delay = float(self.get_parameter('get_state_delay_sec').value)
+        if delay > 0.0:
+            time.sleep(delay)
+        label = str(self.get_parameter('lifecycle_state').value)
+        ids = {'unconfigured': State.PRIMARY_STATE_UNCONFIGURED,
+               'inactive': State.PRIMARY_STATE_INACTIVE,
+               'active': State.PRIMARY_STATE_ACTIVE,
+               'finalized': State.PRIMARY_STATE_FINALIZED}
+        response.current_state.id = ids.get(label, State.PRIMARY_STATE_UNKNOWN)
+        response.current_state.label = label
+        return response
 
     def on_goal(self, request):
         p = request.pose.pose.position
@@ -648,7 +775,7 @@ def run_demo(scenario):
                           on_event=lambda t, e, d, err: events.append(e))
     log.info(f'A 타입 사용: {USING_A_TYPES} / 시나리오: {scenario}')
     t0 = time.monotonic()
-    while not disp.client.server_is_ready() and time.monotonic() - t0 < 10.0:
+    while not disp.nav2_ready()[0] and time.monotonic() - t0 < 10.0:
         rclpy.spin_once(node, timeout_sec=0.2)
     wp = 'ZZZ' if scenario == 'badwp' else 'A'
     goal = NavigationGoal(mission_id='mock-mission', step_id='step-1', plan_version=1,
