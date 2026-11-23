@@ -21,11 +21,16 @@ Nav2 준비 (Gate 2):
   - active 확인 시각은 응답 도착 시각이 아니라 요청을 보낸 시각으로 기록한다
   - 준비가 아니면 송신하지 않고 NOT_READY, REFUSED_BEFORE_SEND 도 반환하지 않는다
   - wait_for_nav2_before_dispatch:=true 이면 위 조건이 처음 충족될 때 dispatch_goal 을 공개
+
+Waypoint 좌표:
+  - waypoints_file:=<경로> 이면 그 YAML 을 읽는다 (A·C·D 공용 config/waypoints.yaml)
+  - 비어 있으면 아래 MOCK_WAYPOINTS 임시값을 쓴다 (기존 테스트·SIM 스크립트 호환)
 """
 import math
 import re
 import sys
 import time
+from pathlib import Path
 from dataclasses import dataclass, fields, replace
 from enum import Enum, auto
 from uuid import uuid4
@@ -81,6 +86,35 @@ MOCK_WAYPOINTS = {
     'B': (2.0, -0.5, 1.57),
     'C': (0.5, 1.5, 3.14),
 }
+
+WAYPOINT_ID_RE = re.compile(r'^[A-Za-z0-9_-]+$')
+
+
+def load_waypoints(path, frame_id='map'):
+    """공용 waypoints.yaml → {id: (x, y, yaw)}. 형식이 틀리면 시작 단계에서 바로 실패한다."""
+    import yaml
+    data = yaml.safe_load(Path(path).read_text(encoding='utf-8'))
+    if not isinstance(data, dict) or not isinstance(data.get('waypoints'), dict):
+        raise ValueError(f'{path}: top-level "waypoints" mapping required')
+    if data.get('frame_id', frame_id) != frame_id:
+        raise ValueError(f'{path}: frame_id must be {frame_id!r}, got {data.get("frame_id")!r}')
+    out = {}
+    for wid, pose in data['waypoints'].items():
+        if not isinstance(wid, str) or not WAYPOINT_ID_RE.match(wid):
+            raise ValueError(f'{path}: bad waypoint id {wid!r}')
+        if not isinstance(pose, dict) or set(pose) != {'x', 'y', 'yaw'}:
+            raise ValueError(f'{path}: {wid} needs exactly x, y, yaw')
+        vals = []
+        for k in ('x', 'y', 'yaw'):
+            v = pose[k]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                raise ValueError(f'{path}: {wid}.{k} must be a finite number')
+            vals.append(float(v))
+        out[wid] = tuple(vals)
+    if 'HOME' not in out:
+        raise ValueError(f'{path}: HOME waypoint required')
+    return out
+
 
 PENDING_STATES = ('SENT', 'ACTIVE', 'UNCERTAIN', 'RESULT_UNKNOWN')
 CONFIRMED_NOT_ACTIVE = ('ABORTED', 'CANCELED', 'REJECTED')
@@ -404,8 +438,13 @@ class DNavigationNode(Node):
         self.declare_parameter('fault_result_error', False)
         self.declare_parameter('wait_for_nav2_before_dispatch', False)
         self.declare_parameter('nav2_lifecycle_node', 'bt_navigator')
+        self.declare_parameter('waypoints_file', '')
+        wp_file = str(self.get_parameter('waypoints_file').value)
+        self.waypoints = load_waypoints(wp_file) if wp_file else dict(MOCK_WAYPOINTS)
+        self.get_logger().info(
+            f'Waypoint {sorted(self.waypoints)} ({wp_file or "MOCK 임시값"})')
         self.disp = Nav2Dispatcher(
-            self, MOCK_WAYPOINTS,
+            self, self.waypoints,
             accept_timeout_sec=float(self.get_parameter('accept_timeout_sec').value),
             on_event=self._on_event,
             fault_result_error=lambda: bool(self.get_parameter('fault_result_error').value),
@@ -448,7 +487,7 @@ class DNavigationNode(Node):
         ctx = GoalContext.from_msg(req)
         gid = ctx.nav_goal_id
         res.attempt_id, res.nav_goal_id = ctx.attempt_id, gid
-        errs = ctx.problems(MOCK_WAYPOINTS)
+        errs = ctx.problems(self.waypoints)
         if errs:
             res.result, res.reason = D.RESULT_INVALID, '; '.join(errs)
         elif gid in self.contexts:
