@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "map": {
+      "id": "tb3_sandbox",
+      "frame": "map",
+      "yaml_sha256": "2a284eba0a3aa4a904bce71734c56a543e979899f1cf34daad6e8215e608b438",
+      "image_sha256": "0103b9dfaa3b79592af71cc35d64f69cfbd3565d173160820ad8ef56cd27b3fc"
+    },
+    "waypoints": {
+      "HOME": [
+        -2.0,
+        -0.5,
+        0.0
+      ],
+      "PICKUP_1": [
+        -0.55,
+        -0.5,
+        0.0
+      ],
+      "DROP_1": [
+        0.55,
+        0.5,
+        0.0
+      ]
+    },
+    "planner": {
+      "id": "GridBased",
+      "plugin": "nav2_navfn_planner::NavfnPlanner",
+      "use_astar": false,
+      "use_start": true,
+      "params_sha256": "52c3eba50c48b6a163cf5026dd2cb6fd51697fe62bd2df392aaa870907cfdaef"
+    },
+    "global_costmap": {
+      "params_sha256": "c0d58a35571d16f7cc2e207d589ffb04d4ec1f377fe0ee5eb821a94bc263f082"
+    }
+  },
+  "segments": [
+    {
+      "start": "DROP_1",
+      "goal": "HOME",
+      "reachable": true,
+      "distance_m": 3.3668046538248246
+    },
+    {
+      "start": "DROP_1",
+      "goal": "PICKUP_1",
+      "reachable": true,
+      "distance_m": 1.9773033210245379
+    },
+    {
+      "start": "HOME",
+      "goal": "DROP_1",
+      "reachable": true,
+      "distance_m": 3.3950964340734004
+    },
+    {
+      "start": "HOME",
+      "goal": "PICKUP_1",
+      "reachable": true,
+      "distance_m": 1.4787066306130414
+    },
+    {
+      "start": "PICKUP_1",
+      "goal": "DROP_1",
+      "reachable": true,
+      "distance_m": 1.9340176687269293
+    },
+    {
+      "start": "PICKUP_1",
+      "goal": "HOME",
+      "reachable": true,
+      "distance_m": 1.4756042053673157
+    }
+  ],
+  "cost_revision": "nav2-v1-5385e8d1c749422e2fcfa338301a989fce502fe39cc9959020185e0d066cf5a9"
+}
