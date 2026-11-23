@@ -119,14 +119,14 @@ class MockMissionManager:
             raise MissionInputError("mission_id must be a nonempty string")
         if mission_id != self.mission_id:
             return {"outcome": "rejected", "reason": "다른 미션"}
+        if self.work_completed:
+            return {"outcome": "rejected", "reason": "이미 완료된 미션"}   # 완료 뒤에는 실행 허용 여부와 관계없이 거부
         if self.run_authorized:
             return {"outcome": "accepted", "reason": "이미 실행 중"}   # 같은 요청 재전송 → 같은 결과
         if self.recovery_required:
             return {"outcome": "rejected", "reason": "재시작 후 복구 확인 중"}
         if not self.steps:
             return {"outcome": "rejected", "reason": "등록된 작업 없음"}
-        if self.work_completed:
-            return {"outcome": "rejected", "reason": "이미 완료된 미션"}
         if not self.ready:
             return {"outcome": "rejected", "reason": "준비 상태 미확인 (INTERFACES §4.6)"}
         self.run_authorized = True

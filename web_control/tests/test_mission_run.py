@@ -63,3 +63,16 @@ def test_jobs_added_while_running_continue_without_new_run(make_client, mock_a):
     mock_a.arrive(goal["step_id"])
     http.post("/api/handoffs", json={"mission_id": mock_a.mission_id, "step_id": goal["step_id"]})
     assert mock_a.claim_next_goal()["step_id"].endswith("-DROPOFF")
+
+
+def test_run_after_completion_is_rejected_even_if_previously_allowed(make_client, mock_a):
+    """미션이 끝난 뒤의 실행 요청은 '이미 실행 중'이 아니라 '이미 완료된 미션'으로 거부."""
+    from conftest import waiting_step
+    http = make_client(mock_a)
+    mid, step = waiting_step(http, mock_a, pickup="PICKUP_1", dropoff="HOME")
+    http.post("/api/handoffs", json={"mission_id": mid, "step_id": step})
+    goal = mock_a.claim_next_goal(); mock_a.arrive(goal["step_id"])
+    http.post("/api/handoffs", json={"mission_id": mid, "step_id": goal["step_id"]})
+    assert mock_a.mission_status == "completed" and mock_a.run_authorized
+    r = _run(http, mid).json()
+    assert r["outcome"] == "rejected" and r["reason"] == "이미 완료된 미션"
