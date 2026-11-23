@@ -40,38 +40,38 @@
       "start": "DROP_1",
       "goal": "HOME",
       "reachable": true,
-      "distance_m": 2.754776261517808
+      "distance_m": 3.3668046538248246
     },
     {
       "start": "DROP_1",
       "goal": "PICKUP_1",
       "reachable": true,
-      "distance_m": 1.486928406782386
+      "distance_m": 1.9773033210245379
     },
     {
       "start": "HOME",
       "goal": "DROP_1",
       "reachable": true,
-      "distance_m": 2.759019866696693
+      "distance_m": 3.3950964340734004
     },
     {
       "start": "HOME",
       "goal": "PICKUP_1",
       "reachable": true,
-      "distance_m": 1.449999880790911
+      "distance_m": 1.4787066306130414
     },
     {
       "start": "PICKUP_1",
       "goal": "DROP_1",
       "reachable": true,
-      "distance_m": 1.4869881027551923
+      "distance_m": 1.9340176687269293
     },
     {
       "start": "PICKUP_1",
       "goal": "HOME",
       "reachable": true,
-      "distance_m": 1.4500001408161736
+      "distance_m": 1.4756042053673157
     }
   ],
-  "cost_revision": "nav2-v1-3f49dedc567fa6a1b96363d5b19826c5e468f4242eaabbcdb571c972ad1c4138"
+  "cost_revision": "nav2-v1-5385e8d1c749422e2fcfa338301a989fce502fe39cc9959020185e0d066cf5a9"
 }
