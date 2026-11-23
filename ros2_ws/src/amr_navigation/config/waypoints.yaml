@@ -6,4 +6,4 @@ map: tb3_sandbox
 waypoints:
   HOME:     {x: -2.0,  y: -0.5, yaw: 0.0}   # 로봇 시작 위치 (initial_pose)
   PICKUP_1: {x: -0.55, y: -0.5, yaw: 0.0}   # PR #14 SIM 주행 확인 (SIM_P1)
-  DROP_1:   {x: 0.55,  y: 0.5,  yaw: 0.0}   # 후보: 비용표 경로 확인 후 확정
+  DROP_1:   {x: 0.55,  y: 0.5,  yaw: 0.0}   # C 비용표 계획 경로 정상 확인 (확정)
