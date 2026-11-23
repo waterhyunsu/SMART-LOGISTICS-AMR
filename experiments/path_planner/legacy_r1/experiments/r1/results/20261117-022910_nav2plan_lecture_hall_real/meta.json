@@ -1,0 +1,14 @@
+{
+  "mode": "nav2plan",
+  "world": "lecture_hall_real",
+  "map": "/app/experiments/r1/maps/lecture_hall_real.yaml",
+  "map_image": "/app/experiments/r1/maps/lecture_hall_real.pgm",
+  "config_version": "4f2c662a-n6d95dc-m5249d1",
+  "nav2_params": "experiments/r1/nav2/nav2_r1.yaml",
+  "repeat": 30,
+  "random": 200,
+  "seed": 1,
+  "host": "50dccf9e07e6",
+  "started": "20261117-022910_nav2plan_lecture_hall_real",
+  "rows": 1680
+}

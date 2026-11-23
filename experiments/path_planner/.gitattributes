@@ -1,0 +1,5 @@
+# 컨테이너·Ubuntu 에서 실행하는 파일은 Windows(core.autocrlf=true)에서 받아도 LF 로 유지한다.
+*.py    text eol=lf
+*.sh    text eol=lf
+*.yaml  text eol=lf
+Dockerfile text eol=lf
