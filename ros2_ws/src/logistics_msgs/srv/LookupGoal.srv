@@ -22,7 +22,8 @@ uint8 OBS_NO_ACTIVE_GOAL=3    # only when terminal state confirmed AND no other 
 uint8 OBS_UNKNOWN=4           # cannot confirm (no record, accept timeout, result lookup failure, ...)
 uint8 OBS_DISCONNECTED=5
 uint8 OBS_TIMEOUT=6
+uint8 OBS_REFUSED_BEFORE_SEND=7  # recorded NOT_READY, Nav2 now ready, no active/pending send
 
 uint8 observation
-bool no_pending_dispatch      # true is required together with OBS_NO_ACTIVE_GOAL
+bool no_pending_dispatch      # true is required with OBS_NO_ACTIVE_GOAL or OBS_REFUSED_BEFORE_SEND
 string detail

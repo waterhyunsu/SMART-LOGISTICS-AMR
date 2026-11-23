@@ -134,3 +134,89 @@ python3 -m pytest -q src/mission_manager/test/test_navigation_boundary.py
 UUID 저장은 외부 송신 전에 완료된다. 송신 실패 시 기존 저장값을 유지하며, 재시작 시 선점된 목표에서 복구 제한을 복원한다. DB COMMIT과 외부 송신은 별도 단계이므로 재시도 전에 D가 실행 및 지연 송신 부재를 확인해야 한다.
 
 실제 Nav2 UUID/Action API, D의 실행 부재 증빙 및 지연 송신 배제, D 프로세스와 로봇 통신, 실차 주행은 후속 연동 검증 범위다.
+
+## Gate 1 A↔D ROS 2 서비스 검증
+
+`NavigationServices(manager)`는 Mission Manager의 단일 executor에서 기존
+`NavigationDispatchBoundary`를 ROS 2의 `dispatch_goal`, `report_goal_event`,
+`lookup_goal`에 연결한다. Gate 1 테스트가 이 어댑터를 등록하며 기본 CLI는
+계획 승인까지 실행한다.
+
+- 호출자가 `claim_next_goal()`로 선점한 목표를 `dispatch(goal)`에 전달한다.
+  A가 SQLite에 UUID를 커밋한 뒤 D에 한 번 송신한다. D의 접수 응답과
+  Nav2의 수락 이벤트는 각각 확인한다. 일반 TaskStep은 일치하는 도착
+  이벤트를 적용한 뒤 인계 대기가 된다.
+- 접수·수락 시간 초과, 실패, 취소, 불확실 응답은 복구 조회 대상으로 둔다.
+  `lookup()`은 매번 새 확인 ID를 생성한다. 결과가 불확실하거나 조회가
+  실패하면 같은 시도를 유지한다. DDS 탐색에서 D의 두 서비스가 모두
+  사라졌을 때도 진행 중인 시도를 복구 제한에 둔다. `NO_ACTIVE_GOAL`과 지연 송신 부재가
+  함께 확인되면 `approve_retry(lookup, explicitly_approved=True)`로
+  새 시도를 승인할 수 있다. 승인을 받아도 송신은 별도 호출이다.
+- 테스트용 접수·수락 및 조회 기한은 `timeout_sec`으로 설정한다. 기본값은
+  5초다. 실제 실행 상태를 판단할 운영 기한과 프로세스 재시작 후 D의
+  Nav2 UUID 조회 방식은 SIM 통합 대상이다.
+
+PR #12의 D 노드와 가짜 Nav2 Action 서버가 포함된 워크스페이스를 빌드하고
+`ros2_ws`에서 다음을 실행한다. 테스트가 실제 A 노드와 별도 D·가짜 Nav2
+프로세스를 격리된 ROS 네임스페이스에서 실행한다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+python3 -m pytest -q src/mission_manager/test/test_navigation_services.py
+```
+
+### Nav2가 늦게 시작되는 경우
+
+D는 송신 전 `NOT_READY`로 거절한 시도와 UUID를 기록한다. 같은 요청이
+늦게 도착해도 `DUPLICATE`로 응답한다. Nav2가 준비되고 활성 실행이나
+대기 중인 송신이 없으면, D는 일치하는 실행 문맥과 최신 Check ID의
+`lookup_goal`에 `REFUSED_BEFORE_SEND`와 `no_pending_dispatch=True`를
+반환한다.
+
+| A가 받은 근거 | 복구 처리 |
+| --- | --- |
+| 현재 시도 ID·UUID에 일치하는 `NOT_READY`와 `STATE_NONE`을 기한 내 받았고, 최신 조회에서 D의 거절 기록과 준비 상태를 확인함 | A가 명시적으로 승인하면 새 시도 ID가 생성된다. 별도로 목표를 제출할 때 새 UUID를 사용한다. |
+| 응답 유실·시간 초과, 문맥 불일치 또는 A·D 재시작으로 송신 전 거절 근거를 잃음 | 이 거절 경로에서는 기존 시도와 복구 제한을 유지한다. Nav2가 준비됐다는 사실이나 거절 이유 문자열로 실행 부재를 판정하지 않는다. |
+
+별도 프로세스 테스트는 두 경우와 기존 UUID 재전송 차단을 확인한다.
+
+```bash
+python3 -m pytest -q src/mission_manager/test/test_navigation_services.py   -k retry_after_not_ready_then_nav2_start
+```
+
+### 공용 PC에서 A↔D 단일 목표 SIM
+
+PR #14의 코드가 포함된 체크아웃에서 Jazzy와 작업 공간을 빌드하고 source한
+뒤, 저장소 루트에서 [예제 설정](../../../scripts/a_d_sim.example.json)을 복사해
+D와 합의한 값으로 채운다. [실행 스크립트](../../../scripts/verify_a_d_sim.py)는
+공용 PC의 SIM 프로세스를 실행하고 결과를 파일에 기록한다.
+
+- `sim_command`에는 공용 PC에서 사용할 Gazebo·Nav2 실행 명령을 인자 배열로
+  적는다. `{map_yaml}`은 지정한 지도 YAML 절대 경로로, `{config_dir}`는 설정
+  파일의 상위 경로로 치환된다. 명령의 작업 디렉터리도 설정 파일의 상위 경로다.
+- `initial_pose`와 `waypoint.pose`는 지도 좌표계의 `[x, y, yaw]`이며 yaw는
+  라디안이다. D가 확인한 Waypoint ID를 넣는다. Nav2의 최종 위치 판정에 사용할
+  거리 허용치는 `tolerance_m`으로 지정한다.
+- `d_command: null`은 PR #14의 D 어댑터를 사용하고 입력 좌표를 해당 프로세스에만
+  주입한다. 내장 어댑터는 자신의 Nav2 Action 클라이언트가 서버를 발견한 후
+  `dispatch_goal`을 공개한다. D가 별도 실행 명령을 공유하면 인자 배열로 지정할 수 있다. 별도 D
+  실행은 같은 Waypoint·SIM 시간·루트 네임스페이스를 사용하고, PR #14의
+  `[SEND] <UUID> → waypoint <ID> (x, y, yaw)` 로그 형식을 제공해야 한다.
+- 격리된 미사용 `ros_domain_id`를 선택한다. 실행기는 localhost DDS, 빈 정적 피어,
+  실행별 Gazebo 파티션을 설정한다. SIM 구성은 루트 네임스페이스의 표준 Nav2
+  Action·lifecycle 서비스·센서 토픽을 사용한다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ros2_ws/install/setup.bash
+python3 scripts/verify_a_d_sim.py /path/to/team-sim.json
+python3 scripts/verify_a_d_sim.py /path/to/team-sim.json --run --log-dir /path/to/sim-logs
+```
+
+첫 명령은 설정 검사다. `--run` 실행은 센서·AMCL·TF·Nav2 활성 상태를 기다린
+뒤, 고정된 수거·전달 계획의 첫 목표를 송신한다. 검증 대상은 D 송신 로그 1건,
+A·D·Nav2 UUID 일치, Nav2 `SUCCEEDED`, 지도 좌표의 도착 위치, A의 인계 대기다.
+외부 C 서비스 없이 고정 계획을 사용하며 인계 확정이나 다음 목표 송신은 수행하지
+않는다. 성공과 실패 모두 `summary.json`, `sim.log`, `d.log` 등에 기록한다.
+준비 단계에서 실패하면 시작된 프로세스의 로그만 생긴다.

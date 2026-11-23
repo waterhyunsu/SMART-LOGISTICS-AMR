@@ -7,6 +7,7 @@
   <license>TODO</license>
   <depend>python3-setuptools</depend>
   <exec_depend>logistics_msgs</exec_depend>
+  <test_depend>amr_navigation</test_depend>
   <test_depend>python3-pytest</test_depend>
   <exec_depend>rclpy</exec_depend>
   <export>

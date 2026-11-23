@@ -27,6 +27,7 @@ from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.clock import Clock, ClockType
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from unique_identifier_msgs.msg import UUID
@@ -322,6 +323,7 @@ class DNavigationNode(Node):
         self.DispatchGoal, self.ReportGoalEvent, self.LookupGoal = load_srvs()
         self.declare_parameter('accept_timeout_sec', 5.0)
         self.declare_parameter('fault_result_error', False)
+        self.declare_parameter('wait_for_nav2_before_dispatch', False)
         self.disp = Nav2Dispatcher(
             self, MOCK_WAYPOINTS,
             accept_timeout_sec=float(self.get_parameter('accept_timeout_sec').value),
@@ -329,24 +331,35 @@ class DNavigationNode(Node):
             fault_result_error=lambda: bool(self.get_parameter('fault_result_error').value))
         self.contexts = {}        # nav_goal_id -> GoalContext
         self.attempts = {}        # attempt_id -> nav_goal_id
+        self.refused_before_send = set()
         self.sent_count = 0
         self.event_seq = 0
         self.outbox = []          # 아직 A가 응답하지 않은 ReportGoalEvent 요청
         self.inflight = None
         self.inflight_at = 0.0
-        self.create_service(self.DispatchGoal, 'dispatch_goal', self.on_dispatch)
         self.create_service(self.LookupGoal, 'lookup_goal', self.on_lookup)
         self.report_cli = self.create_client(self.ReportGoalEvent, 'report_goal_event')
         self.create_timer(0.5, self._flush_outbox)
-        self.get_logger().info('D 노드 시작: dispatch_goal / lookup_goal 서버, report_goal_event 클라이언트')
+        self.get_logger().info('D 노드 시작: lookup_goal 서버, report_goal_event 클라이언트')
+        if self.get_parameter('wait_for_nav2_before_dispatch').value:
+            self._dispatch_startup_timer = self.create_timer(
+                0.1, self._wait_for_nav2, clock=Clock(clock_type=ClockType.STEADY_TIME))
+        else:
+            self._advertise_dispatch_goal()
+
+    def _wait_for_nav2(self):
+        if self.disp.client.server_is_ready():
+            self._advertise_dispatch_goal()
+            self._dispatch_startup_timer.cancel()
+
+    def _advertise_dispatch_goal(self):
+        self.create_service(self.DispatchGoal, 'dispatch_goal', self.on_dispatch)
+        self.get_logger().info('dispatch_goal 서비스 공개')
 
     STATE_CODES = {'NONE': 0, 'SENT': 1, 'ACTIVE': 2, 'SUCCEEDED': 3, 'ABORTED': 4,
                    'CANCELED': 5, 'REJECTED': 6, 'UNCERTAIN': 7}
     EVENT_CODES = {'ACCEPTED': 1, 'REJECTED': 2, 'SUCCEEDED': 3, 'ABORTED': 4,
                    'CANCELED': 5, 'UNCERTAIN': 6}
-    OBS_CODES = {'ARRIVED': 1, 'NOT_ARRIVED': 2, 'NO_ACTIVE_GOAL': 3, 'UNKNOWN': 4,
-                 'DISCONNECTED': 5, 'TIMEOUT': 6}
-
     # ---------- dispatch_goal ----------
     def on_dispatch(self, req, res):
         D = self.DispatchGoal.Response
@@ -364,12 +377,14 @@ class DNavigationNode(Node):
         elif ctx.attempt_id in self.attempts:
             res.result, res.reason = D.RESULT_CONFLICT, 'same attempt_id with different nav_goal_id'
         else:
+            # Keep pre-send refusals so a delayed copy cannot start the old attempt.
+            self.contexts[gid] = ctx
+            self.attempts[ctx.attempt_id] = gid
             ok, why = self.disp.ready_for(ctx)
             if not ok:
+                self.refused_before_send.add(gid)
                 res.result, res.reason = D.RESULT_NOT_READY, why
             else:
-                self.contexts[gid] = ctx
-                self.attempts[ctx.attempt_id] = gid
                 res.result, res.reason = D.RESULT_ACCEPTED, 'received; Nav2 send started'
                 try:
                     if self.disp.send(SimpleTicket(ctx, gid)):
@@ -392,14 +407,21 @@ class DNavigationNode(Node):
         res.check_id = req.check_id
         stored = self.contexts.get(ctx.nav_goal_id)
         if stored is not None and stored != ctx:
-            obs, nop, detail = NavigationObservation.UNKNOWN, False, 'context mismatch'
+            obs, nop, detail = 'UNKNOWN', False, 'context mismatch'
+        elif ctx.nav_goal_id in self.refused_before_send:
+            ready, why = self.disp.ready_for(ctx)
+            if ready:
+                obs, nop, detail = 'REFUSED_BEFORE_SEND', True, 'prior request refused; Nav2 ready'
+            else:
+                obs, nop, detail = 'UNKNOWN', False, why
         else:
-            obs, nop, detail = self.disp.inspect(ctx.nav_goal_id)
-        res.observation = self.OBS_CODES[obs.name]
-        res.no_pending_dispatch = bool(nop)
+            observation, nop, detail = self.disp.inspect(ctx.nav_goal_id)
+            obs = observation.name
+        res.observation = getattr(self.LookupGoal.Response, f'OBS_{obs}')
+        res.no_pending_dispatch = nop
         res.detail = detail
         self.get_logger().info(
-            f'[lookup_goal] check={req.check_id[:8]} {ctx.nav_goal_id} → {obs.name}, '
+            f'[lookup_goal] check={req.check_id[:8]} {ctx.nav_goal_id} → {obs}, '
             f'no_pending_dispatch={nop} ({detail})')
         return res
 
