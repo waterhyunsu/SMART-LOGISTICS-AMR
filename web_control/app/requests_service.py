@@ -13,6 +13,9 @@ from .db import FINAL_STATUSES, OPEN_STATUSES, Database, now
 from .mission_client import MissionClient, MissionRecoveryPending, MissionTimeout
 
 
+_OPEN_SQL = "(" + ",".join(f"'{x}'" for x in OPEN_STATUSES) + ")"
+
+
 class RequestRejected(Exception):
     """E 쪽에서 요청을 받지 않음 (API 409)."""
 
@@ -59,7 +62,7 @@ class RequestService:
             status = "ACCEPTED" if res.get("outcome") == "accepted" else "REJECTED"
             self.db.execute(
                 "UPDATE job_requests SET status=?, job_id=?, mission_id=?, reason=?, last_error=NULL, updated_at=? "
-                "WHERE request_id=?",
+                f"WHERE request_id=? AND status IN {_OPEN_SQL}",
                 (status, res.get("job_id"), res.get("mission_id"), res.get("reason"), now(), request_id),
             )
         await self._changed()
@@ -144,7 +147,13 @@ class RequestService:
 
     # ------------------------------------------------------------------
     def _mark(self, table, key_col, key, status, error):
+        """결과가 아직 열린 상태(전송 중·미확인·복구 대기)일 때만 갱신한다.
+
+        같은 ID 전송이 겹치면(예: 재전송 중 이전 전송의 타임아웃이 늦게 도착) 먼저 저장된
+        최종 결과(ACCEPTED·REJECTED·CONFLICT)를 늦게 끝난 전송이 덮어쓰지 않는다.
+        A도 같은 ID에는 처음 결과를 다시 돌려주므로(INTERFACES §5.3) 처음 받은 최종 결과를 유지한다.
+        """
         self.db.execute(
-            f"UPDATE {table} SET status=?, last_error=?, updated_at=? WHERE {key_col}=?",
+            f"UPDATE {table} SET status=?, last_error=?, updated_at=? WHERE {key_col}=? AND status IN {_OPEN_SQL}",
             (status, error, now(), key),
         )

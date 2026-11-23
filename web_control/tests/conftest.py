@@ -15,7 +15,7 @@ from app.mock_mission import MockMissionManager  # noqa: E402
 @pytest.fixture
 def mock_a():
     """자동 주행 없이 테스트가 단계를 직접 진행시키는 A 대역."""
-    return MockMissionManager(load_waypoints(), auto_run=False)
+    return MockMissionManager(load_waypoints(), auto_run=False, run_id="")
 
 
 @pytest.fixture

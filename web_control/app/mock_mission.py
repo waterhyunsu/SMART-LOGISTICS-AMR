@@ -18,6 +18,7 @@ A가 준비되기 전 E의 기능(요청·기록·재전송·화면)을 검증�
 import asyncio
 import math
 import time
+import uuid
 
 from .mission_client import MissionRecoveryPending, MissionTimeout
 
@@ -25,8 +26,22 @@ PICKUP, DROPOFF = "PICKUP", "DROPOFF"
 ROBOT_SPEED = 0.22  # m/s
 
 
+def _new_run_id() -> str:
+    """시작 시각(초, 36진수) + 무작위 2자리. 같은 DB를 쓰는 이전 실행과 겹치지 않게 한다."""
+    t, digits, out = int(time.time()), "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", ""
+    while t:
+        t, r = divmod(t, 36)
+        out = digits[r] + out
+    return out + uuid.uuid4().hex[:2].upper()
+
+
 class MockMissionManager:
-    def __init__(self, waypoints: dict, speed_scale: float = 4.0, auto_run: bool = True):
+    def __init__(self, waypoints: dict, speed_scale: float = 4.0, auto_run: bool = True,
+                 run_id: str | None = None):
+        # 실행마다 다른 run_id를 ID에 넣는다. 같은 DB로 MOCK 서버를 재시작해도 새 미션·Job·단계 ID가
+        # 이전 실행의 인계 기록과 겹쳐 409로 막히지 않게 한다. run_id="" 이면 접두어 없음(테스트용).
+        self.run_id = _new_run_id() if run_id is None else run_id
+        self._id_prefix = f"{self.run_id}-" if self.run_id else ""
         self.wps = waypoints
         self.scale = speed_scale
         self.auto_run = auto_run
@@ -97,7 +112,7 @@ class MockMissionManager:
             res = {"outcome": "rejected", "job_id": None, "mission_id": None, "reason": "유효하지 않은 지점"}
         else:
             self.job_seq += 1
-            jid = f"JOB-{self.job_seq:03d}"
+            jid = f"JOB-{self._id_prefix}{self.job_seq:03d}"
             running = self.mission_status == "RUNNING"
             self.jobs[jid] = {"job_id": jid, "pickup": pickup, "dropoff": dropoff,
                               "mission_id": self.mission_id if running else None}
@@ -117,7 +132,7 @@ class MockMissionManager:
         if not pending:
             return {"outcome": "rejected", "mission_id": None, "reason": "대기 중인 Job 없음"}
         self.mission_seq += 1
-        self.mission_id = f"MISSION-MOCK-{self.mission_seq:03d}"
+        self.mission_id = f"MISSION-MOCK-{self._id_prefix}{self.mission_seq:03d}"
         for j in pending:
             j["mission_id"] = self.mission_id
         self.order = [s for j in pending for s in (f"{j['job_id']}-PICKUP", f"{j['job_id']}-DROPOFF")]
@@ -193,6 +208,7 @@ class MockMissionManager:
             "jobs": list(self.jobs.values()),
             "steps": steps,
             "recovery_required": self.recovery_required,
+            "run_id": self.run_id,
             "robot": {**self.robot, "at": self.at_wp, "moving_to": self.move["to"] if self.move else None},
         }
 

@@ -27,7 +27,7 @@ env -u PYTHONPATH DB_PATH=/tmp/web_control_demo.db uvicorn app.main:app --host 0
 
 ### 2. 주문(Job) 1건 등록
 
-화면: 왼쪽 아래 작업 요청에서 수거·전달 지점을 고르고 등록 → **미션 시작**.
+화면: 왼쪽 아래 "물류 작업"에서 수거·전달 지점을 고르고 **작업 요청** → **미션 시작 요청**.
 
 curl:
 
@@ -36,7 +36,7 @@ curl -s -X POST localhost:8000/api/job-requests -H 'Content-Type: application/js
 ```
 
 ```json
-{"request_id":"req-68054ad640c8","pickup":"HOME","dropoff":"A","status":"ACCEPTED","job_id":"JOB-001", ...}
+{"request_id":"req-68054ad640c8","pickup":"HOME","dropoff":"A","status":"ACCEPTED","job_id":"JOB-TA3F9K2B-001", ...}
 ```
 
 ```bash
@@ -45,55 +45,58 @@ curl -s -X POST localhost:8000/api/mission/start
 ```
 
 ```json
-{"outcome":"accepted","mission_id":"MISSION-MOCK-001","reason":""}
+{"outcome":"accepted","mission_id":"MISSION-MOCK-TA3F9K2B-001","reason":""}
 ```
 
-지점 이름은 `config/waypoints.json`의 `HOME`, `A`~`D` (좌표는 임시, P-014).
+- 지점 이름은 `config/waypoints.json`의 `HOME`, `A`~`D` (좌표는 임시, P-014).
+- MOCK의 미션·Job·단계 ID에는 서버 실행마다 바뀌는 `run_id`(시작 시각 + 무작위, 예: `TA3F9K2B`)가 들어간다. 같은 DB로 서버를 재시작해도
+  새 ID가 이전 인계 기록과 겹치지 않게 하기 위함이다. 그래서 아래 명령은 ID를 직접 쓰지 않고 `/api/state`에서 읽는다.
 
 ### 3. 인계 요청 1건 보내고 확인
 
-로봇이 수거 지점에 도착해 A가 인계 대기가 될 때까지 기다린다 (MOCK에서 수 초).
+로봇이 수거 지점에 도착해 A가 인계 대기가 될 때까지 기다린다 (MOCK에서 수 초). 현재 미션·단계를 셸 변수로 읽는다.
 
 ```bash
-curl -s localhost:8000/api/state | python3 -c 'import sys,json;a=json.load(sys.stdin)["a_state"];print(a["mission_id"],a["current_step_id"],a["waiting_confirmation"])'
+read MID STEP WAIT < <(curl -s localhost:8000/api/state | python3 -c 'import sys,json;a=json.load(sys.stdin)["a_state"];print(a["mission_id"],a["current_step_id"],a["waiting_confirmation"])'); echo $MID $STEP $WAIT
 ```
 
 ```text
-MISSION-MOCK-001 JOB-001-PICKUP True
+MISSION-MOCK-TA3F9K2B-001 JOB-TA3F9K2B-001-PICKUP True
 ```
 
-`waiting_confirmation`이 `True`가 되면 그 `mission_id`, `current_step_id`로 인계를 보낸다.
+`WAIT`가 `True`이면 인계를 보낸다. `False`이면 몇 초 뒤 위 명령을 다시 실행한다.
 
 ```bash
-curl -s -X POST localhost:8000/api/handoffs -H 'Content-Type: application/json' -d '{"mission_id":"MISSION-MOCK-001","step_id":"JOB-001-PICKUP"}'
+curl -s -X POST localhost:8000/api/handoffs -H 'Content-Type: application/json' -d "{\"mission_id\":\"$MID\",\"step_id\":\"$STEP\"}"
 ```
 
 ```json
-{"event_id":"evt-0e9949f3eb2d","mission_id":"MISSION-MOCK-001","step_id":"JOB-001-PICKUP","status":"ACCEPTED","attempts":1, ...}
+{"event_id":"evt-0e9949f3eb2d","mission_id":"MISSION-MOCK-TA3F9K2B-001","step_id":"JOB-TA3F9K2B-001-PICKUP","status":"ACCEPTED","attempts":1, ...}
 ```
 
-`curl -s localhost:8000/api/handoffs`로 E가 기록한 인계 이력을 확인한다. 화면에서는 가운데 "현재 미션"의 **인계 완료** 버튼과 오른쪽 아래 발신 기록 표로 같은 흐름을 볼 수 있다.
+`curl -s localhost:8000/api/handoffs`로 E가 기록한 인계 이력을 확인한다. 화면에서는 오른쪽 위 "현재 미션"의 **인계 완료** 버튼과 오른쪽 아래 "E 발신 기록" 표로 같은 흐름을 볼 수 있다.
 
 ### 4. 응답 유실 → 같은 event_id 재전송 → 1회만 반영
 
-전달 지점(`JOB-001-DROPOFF`)에서 인계 대기가 되면:
+전달 지점에서 인계 대기가 되면(3번의 `read` 명령을 다시 실행해 `STEP`이 `...-DROPOFF`, `WAIT`가 `True`인지 확인):
 
 ```bash
 curl -s -X POST localhost:8000/api/mock/faults -H 'Content-Type: application/json' -d '{"drop_next_ack":true}'
-curl -s -X POST localhost:8000/api/handoffs -H 'Content-Type: application/json' -d '{"mission_id":"MISSION-MOCK-001","step_id":"JOB-001-DROPOFF"}'
+EID=$(curl -s -X POST localhost:8000/api/handoffs -H 'Content-Type: application/json' -d "{\"mission_id\":\"$MID\",\"step_id\":\"$STEP\"}" | python3 -c 'import sys,json;r=json.load(sys.stdin);print(r["status"],file=sys.stderr);print(r["event_id"])'); echo $EID
 ```
 
-```json
-{"event_id":"evt-2b1f30c67c01", ..., "status":"UNCONFIRMED","attempts":1,"last_error":"[MOCK] 응답 유실 (A는 이미 처리함)"}
+```text
+UNCONFIRMED
+evt-2b1f30c67c01
 ```
 
-A 테스트 대역은 인계를 처리했지만 응답이 사라진 상태다. 이때:
+A 테스트 대역은 인계를 처리했지만 응답이 사라진 상태다(`last_error`: `[MOCK] 응답 유실 (A는 이미 처리함)`). 이때:
 
 - 같은 단계로 **새 인계를 누르면 409**로 막힌다 (새 event_id로 중복 반영되는 것을 방지)
 - **같은 event_id로 재전송**한다
 
 ```bash
-curl -s -X POST localhost:8000/api/handoffs/evt-2b1f30c67c01/retry
+curl -s -X POST localhost:8000/api/handoffs/$EID/retry
 ```
 
 ```json
@@ -102,6 +105,9 @@ curl -s -X POST localhost:8000/api/handoffs/evt-2b1f30c67c01/retry
 
 A 테스트 대역은 같은 event_id의 첫 결과를 다시 돌려줄 뿐 단계 완료를 다시 반영하지 않는다. 반영 횟수는 자동 테스트
 `test_ack_lost_then_retry_with_same_event_applies_once`에서 `handoff_accept_count == 1`로 확인한다.
+
+같은 event_id 전송이 겹쳐(예: 재전송 중 이전 전송의 타임아웃이 늦게 도착) 결과가 엇갈려도, 먼저 저장된 최종 결과
+(`ACCEPTED` 등)는 `UNCONFIRMED`로 덮어써지지 않는다 (`test_late_timeout_does_not_overwrite_accepted_handoff`).
 
 ## 실행 (MOCK) — 설정
 
@@ -147,6 +153,10 @@ env -u PYTHONPATH python3 -m pytest -q tests
 | `test_handoff_for_step_not_waiting_is_rejected_and_new_event_allowed` | 도착 전 거부 → 실제 인계 후 새 이벤트 |
 | `test_a_unreachable_is_unconfirmed_not_failed` | 통신 오류는 실패가 아니라 미확인 |
 | `test_job_ack_lost_then_retry_registers_once` | Job 요청 응답 유실 → 같은 request_id 재전송 → 1회 등록 |
+| `test_late_timeout_does_not_overwrite_accepted_handoff` | 겹친 전송에서 늦게 끝난 타임아웃·통신 오류가 저장된 `ACCEPTED` 인계를 덮어쓰지 않음 |
+| `test_late_timeout_does_not_overwrite_accepted_job` | 같은 경우 Job 요청의 `ACCEPTED`·`job_id`를 덮어쓰지 않음 |
+| `test_open_record_still_becomes_unconfirmed` | 아직 결과가 없는 기록은 정상적으로 `UNCONFIRMED`가 됨 |
+| `test_mock_restart_with_same_db_gets_new_ids_and_new_handoff_is_not_blocked` | 같은 DB로 MOCK 재시작 시 새 미션·단계 ID가 이전 기록과 겹치지 않고, 새 인계가 409 없이 수락됨 |
 | `test_restart_recovers_unconfirmed_job_request` | 재시작 후 미확인 Job 요청 복구 |
 | `test_state_view_comes_from_a` | 화면 상태는 A 값 |
 | `test_new_handoff_during_a_recovery_is_recovery_pending` | A 복구 확인 중 새 인계 → `RECOVERY_PENDING`, 복구 후 같은 ID 재전송 → 1회 수락 |
