@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "map": {"id": "mock-map-v1", "frame": "map"},
+    "waypoints": {"A": [0, 0, 0], "B": [3, 4, 0]},
+    "planner": {
+      "id": "GridBased",
+      "plugin": "nav2_navfn_planner::NavfnPlanner",
+      "use_astar": false
+    },
+    "global_costmap": {"id": "mock-costmap-v1"}
+  },
+  "results": [
+    {
+      "start": "A", "goal": "B", "succeeded": true, "error_code": 0,
+      "poses": [[0, 0], [3, 0], [3, 4]]
+    },
+    {
+      "start": "B", "goal": "A", "succeeded": true, "error_code": 0,
+      "poses": [[3, 4], [0, 0]]
+    }
+  ]
+}
