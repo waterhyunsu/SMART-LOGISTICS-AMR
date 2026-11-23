@@ -53,3 +53,17 @@ class CostSnapshotTest(unittest.TestCase):
     def test_missing_reverse_result_prevents_snapshot(self):
         with self.assertRaisesRegex(ValueError, "Missing directed results"):
             build_snapshot(self.metadata, self.results[:1])
+
+    def test_snapshot_preserves_waypoints_after_source_changes(self):
+        snapshot = build_snapshot(self.metadata, self.results)
+        original_waypoints = deepcopy(snapshot["metadata"]["waypoints"])
+        original_revision = snapshot["cost_revision"]
+
+        self.metadata["waypoints"]["A"][0] = 1.0
+
+        self.assertEqual(snapshot["metadata"]["waypoints"], original_waypoints)
+        self.assertEqual(snapshot["cost_revision"], original_revision)
+
+        updated = build_snapshot(self.metadata, self.results)
+        self.assertEqual(updated["metadata"]["waypoints"]["A"][0], 1.0)
+        self.assertNotEqual(updated["cost_revision"], original_revision)

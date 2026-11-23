@@ -6,6 +6,7 @@ from itertools import pairwise, permutations
 import json
 from math import hypot, isfinite
 from pathlib import Path
+from copy import deepcopy
 
 
 def path_length(poses):
@@ -60,7 +61,7 @@ def build_snapshot(metadata, results):
 
     snapshot = {
         "schema_version": 1,
-        "metadata": metadata,
+        "metadata": deepcopy(metadata),
         "segments": [segments[pair] for pair in sorted(segments)],
     }
     canonical = json.dumps(
