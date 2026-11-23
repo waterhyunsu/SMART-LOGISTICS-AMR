@@ -1,12 +1,12 @@
-"""Build a directed cost snapshot from recorded ComputePathToPose results."""
+"""Build and load directed cost snapshots from ComputePathToPose results."""
 
 import argparse
+from copy import deepcopy
 from hashlib import sha256
 from itertools import pairwise, permutations
 import json
 from math import hypot, isfinite
 from pathlib import Path
-from copy import deepcopy
 
 
 def path_length(poses):
@@ -44,6 +44,7 @@ def build_snapshot(metadata, results):
             "reachable": False,
             "distance_m": None,
         }
+
         succeeded = result["succeeded"] and result["error_code"] == 0
         if succeeded and result["poses"]:
             segment["distance_m"] = path_length(result["poses"])
@@ -53,6 +54,7 @@ def build_snapshot(metadata, results):
                 "Empty path" if succeeded
                 else f"Planner did not return a path (error_code={result['error_code']})"
             )
+
         segments[pair] = segment
 
     missing = expected - segments.keys()
@@ -64,11 +66,54 @@ def build_snapshot(metadata, results):
         "metadata": deepcopy(metadata),
         "segments": [segments[pair] for pair in sorted(segments)],
     }
+    return {**snapshot, "cost_revision": snapshot_revision(snapshot)}
+
+
+def snapshot_revision(snapshot):
     canonical = json.dumps(
         snapshot, sort_keys=True, separators=(",", ":"), allow_nan=False
     )
     revision = sha256(canonical.encode("utf-8")).hexdigest()
-    return {**snapshot, "cost_revision": f"nav2-v1-{revision}"}
+    return f"nav2-v1-{revision}"
+
+
+def load_snapshot(path):
+    """Read a saved snapshot and return its revision, waypoint IDs, and costs."""
+    document = json.loads(Path(path).read_text(encoding="utf-8"))
+    revision = document.pop("cost_revision")
+
+    if document["schema_version"] != 1:
+        raise ValueError("Unsupported cost snapshot schema version")
+    if revision != snapshot_revision(document):
+        raise ValueError("Cost revision does not match snapshot contents")
+
+    waypoints = frozenset(document["metadata"]["waypoints"])
+    expected = set(permutations(waypoints, 2))
+    seen = set()
+
+    # Two tasks at the same waypoint need no movement between them.
+    costs = {(waypoint, waypoint): 0.0 for waypoint in waypoints}
+
+    for segment in document["segments"]:
+        pair = (segment["start"], segment["goal"])
+        if pair not in expected or pair in seen:
+            raise ValueError(f"Unexpected or duplicate directed pair: {pair}")
+        seen.add(pair)
+
+        if segment["reachable"]:
+            distance = segment["distance_m"]
+            if (
+                type(distance) not in (int, float)
+                or not isfinite(distance)
+                or distance < 0
+            ):
+                raise ValueError(f"Invalid distance for directed pair: {pair}")
+            costs[pair] = distance
+
+    if seen != expected:
+        raise ValueError("Missing directed costs in snapshot")
+
+    return revision, waypoints, costs
 
 
 def main():
