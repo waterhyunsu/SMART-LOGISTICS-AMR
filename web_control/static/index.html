@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SMART-LOGISTICS 관제</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>SMART-LOGISTICS <span>AMR 관제</span></h1>
+  <span id="mode-badge" class="badge"></span>
+  <span id="a-badge" class="badge off">A 연결 확인 중</span>
+  <span id="ws-badge" class="badge off">웹 연결 끊김</span>
+</header>
+
+<div id="recovery-banner" class="banner" hidden>A(Mission Manager)가 재시작 후 복구 확인 중입니다. 새 인계 요청은 처리되지 않고 "A 복구 대기"로 남으며, 복구가 끝난 뒤 같은 요청으로 재전송해야 합니다.</div>
+
+<main id="grid">
+  <!-- 1행: 카메라 | 지도 | 현재 미션 -->
+  <section class="card area-cam">
+    <div class="card-head"><h2>로봇 카메라</h2><span class="st">미연동</span></div>
+    <div class="cam-box">
+      <div class="cam-empty">카메라 영상 연동 전<br>
+        <span class="small">E↔ROS2 연결 방식(P-003)·토픽 이름(P-005) 결정 후 추가</span></div>
+    </div>
+  </section>
+
+  <section class="card area-map">
+    <div class="card-head"><h2>지도</h2><span id="robot-text" class="muted small"></span></div>
+    <canvas id="map" width="520" height="520"></canvas>
+    <div class="legend">
+      <span><i class="lg robot"></i>로봇</span>
+      <span><i class="lg plan"></i>남은 계획</span>
+      <span><i class="lg target"></i>현재 목표</span>
+    </div>
+    <div class="muted small">지점: A·C·D 공용 tb3_sandbox 좌표 (화면 표시용 · P-014)</div>
+  </section>
+
+  <section class="card area-mission">
+    <div class="card-head"><h2>현재 미션</h2><span id="mission-status"></span></div>
+    <div id="mission-summary" class="muted">미션 없음</div>
+    <div id="current-step"></div>
+    <div id="plan-view"></div>
+  </section>
+
+  <!-- 2행: 물류 작업 | 요청·인계 기록 -->
+  <section class="card area-jobs">
+    <div class="card-head"><h2>물류 작업</h2></div>
+    <form id="job-form" class="row">
+      <label>수거 <select name="pickup"></select></label>
+      <span class="muted">→</span>
+      <label>전달 <select name="dropoff"></select></label>
+      <button type="submit">작업 요청</button>
+      <button type="button" id="run-btn" class="primary" title="A가 준비 상태를 확인해 실행을 허용합니다 (INTERFACES §11.1)">미션 실행 요청</button>
+    </form>
+    <div id="form-msg" class="small muted">상태는 A(Mission Manager)가 확정한 값만 표시합니다</div>
+    <div id="plan-src" class="small muted"></div>
+    <table id="job-table">
+      <thead><tr><th>Job</th><th>경로</th><th>수거 단계</th><th>전달 단계</th><th>Job 상태</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="card area-log">
+    <div class="card-head"><h2>E 발신 기록</h2>
+      <div id="mock-tools" class="row small" hidden>
+        <span class="muted">MOCK 결함 주입:</span>
+        <button type="button" data-fault="drop_next_ack" title="A는 처리하지만 응답이 사라짐">다음 응답 유실</button>
+        <button type="button" data-fault="timeout_next" title="A가 처리하지 못하고 타임아웃">다음 요청 타임아웃</button>
+        <button type="button" id="recovery-toggle" title="A 재시작 후 복구 확인 중 상태 (RecoveryPending)">A 재시작(복구 대기)</button>
+      </div>
+    </div>
+    <h3>인계 요청</h3>
+    <table id="handoff-table">
+      <thead><tr><th>event_id</th><th>단계</th><th>결과</th><th>시도</th><th>시각</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <h3>작업 요청</h3>
+    <table id="jobreq-table">
+      <thead><tr><th>request_id</th><th>경로</th><th>결과</th><th>Job</th><th>시도</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
