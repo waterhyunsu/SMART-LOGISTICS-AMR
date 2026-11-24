@@ -1,5 +1,7 @@
 # C · 이현수 — 방문 순서 최적화와 Bringup
 
+공항 SIM과 강의실 REAL에 각자의 방향별 비용표와 버전을 사용한다. HOME 복귀 비용과 공차 거리는 비교 지표에서 분리한다. [공항 기획](../MOVEIT_AIRPORT.md)
+
 **목표와 범위.** [route_optimizer](../../ros2_ws/src/route_optimizer/)는 이동 비용·방문 순서 계산, [amr_bringup](../../ros2_ws/src/amr_bringup/)은 센서·구동 환경을 담당한다. 두 패키지는 별도로 개발·검증한다.
 
 | 우선순위 | 작업과 연결 지점 | 완료 기준 |
