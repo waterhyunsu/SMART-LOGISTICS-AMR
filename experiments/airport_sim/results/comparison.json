@@ -1,0 +1,57 @@
+{
+  "cost_revision": "nav2-v1-9ffe790fa7217683b59c8f88b94765c11d7bfd22ca7a89361872f1811bf112b6",
+  "optimized": {
+    "planned_m": 97.51449035652091,
+    "planned_empty_m": 22.98386794909786,
+    "sim_driven_m": 97.27187012785316,
+    "sim_empty_m": 22.99334624979106,
+    "peak_bags": 4,
+    "goals": 11,
+    "accepted_handoffs": 10,
+    "world_samples": 8095,
+    "max_pose_gap_s": 0.036,
+    "home_error_m": 0.038586622174417495,
+    "injected_on": "G1",
+    "visited": [
+      "HOME",
+      "S3",
+      "S1",
+      "G1",
+      "S4",
+      "S2",
+      "S2",
+      "G6",
+      "G5",
+      "G8",
+      "G7",
+      "HOME"
+    ]
+  },
+  "fifo": {
+    "planned_m": 170.960670741363,
+    "planned_empty_m": 104.11841981397261,
+    "sim_driven_m": 171.30547199035973,
+    "sim_empty_m": 104.55046332061578,
+    "peak_bags": 1,
+    "goals": 11,
+    "accepted_handoffs": 10,
+    "world_samples": 11970,
+    "max_pose_gap_s": 0.036,
+    "home_error_m": 0.03984129955423716,
+    "injected_on": "G5",
+    "visited": [
+      "HOME",
+      "S1",
+      "G5",
+      "S3",
+      "G1",
+      "S2",
+      "G6",
+      "S4",
+      "G8",
+      "S2",
+      "G7",
+      "HOME"
+    ]
+  }
+}
