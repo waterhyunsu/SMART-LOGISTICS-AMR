@@ -1,5 +1,7 @@
 # A · 윤현수 — Mission Manager와 통합
 
+공항 13개 지점 SIM과 강의실 5개 지점 REAL에서 진행 중인 TaskStep을 보호하고, 인계 뒤에만 새 계획을 적용한다. [공항 기획](../MOVEIT_AIRPORT.md)
+
 **목표와 범위.** 미션·작업 상태와 계획 적용을 단일 권한으로 관리한다. [mission_manager](../../ros2_ws/src/mission_manager/)가 구현 위치다. [logistics_msgs](../../ros2_ws/src/logistics_msgs/)는 A가 관리하며 변경 시 C 등 소비자의 검토를 받는다.
 
 | 순서 | 구현 및 입출력 | 완료 증거 |

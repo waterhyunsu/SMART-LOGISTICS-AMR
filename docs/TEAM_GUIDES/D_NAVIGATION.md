@@ -1,5 +1,7 @@
 # D · 홍근태 — Nav2·AMCL과 주행 결과
 
+공항 SIM과 강의실 REAL의 지도·Pose를 분리하고 조회·주행·도착 계약을 공통으로 사용한다. [공항 기획](../MOVEIT_AIRPORT.md)
+
 **목표와 범위.** [amr_navigation](../../ros2_ws/src/amr_navigation/)에서 C의 기본 구동 환경을 받아 하나의 목표를 안정적으로 수행한다. 주행 결과는 A에게 전달하며 도착 이후 물품 인계와 미션 완료 판정은 A가 담당한다.
 
 먼저 [A↔D 인수인계](../INTEGRATION_A_D_HANDOFF.md)에서 전송·복구 계약을 검토하고, 지도 없이 별도 프로세스 MOCK에서 동일 Attempt ID·UUID 왕복과 중복 전송 차단을 검증한다. 이후 SIM과 REAL에서 아래 흐름을 검증한다.

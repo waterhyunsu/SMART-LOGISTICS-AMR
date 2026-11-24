@@ -38,7 +38,7 @@
 
 ### 1.3. 문서 우선순위
 
-1. `docs/reference/ORIGINAL_PROPOSAL.md` — 최종 기획 요구사항
+1. `docs/reference/ORIGINAL_PROPOSAL.md` — 기술·역할 기준. 활용 목적·시연 변경은 ADR-016 및 `docs/MOVEIT_AIRPORT.md` 적용
 2. `AGENTS.md` — 프로젝트 공통 개발 규칙
 3. `docs/PRD.md` — 핵심 요구사항 및 우선순위
 4. `docs/ARCHITECTURE.md` — 승인된 아키텍처
@@ -444,6 +444,13 @@ Priority P1·Priority P2 기능 때문에 Priority P0 전체 미션 개발을 �
 
 상세 규칙·미구현 경계는 [인터페이스 계약](INTERFACES.md) §5.3·§6.4에 기록한다. Phase 2에서 DDS 왕복과 프로세스 재시작 후 일관성을 통합 검증한다.
 
+### ADR-016 — MOVEIT 공항 이동지원 적용 및 시연 범위 (2026-11-24, A 승인)
+
+- 기존 저장소와 설계를 유지하고, 이동지원 직원이 승객을 돕는 동안 공유 AMR이 소형 수하물을 운반하는 서비스 시나리오를 적용한다.
+- 가상 공항 SIM 13개 지점은 최적화·재계획 연구에, 강의실 REAL 5개 지점은 로봇 주행과 사람의 인계 검증에 사용한다. 기존 샌드박스는 별도 회귀 기준이다.
+- 범용 물류 시연의 지점 이름과 주문 예시를 새 시연 정의로 대체한다. 기존 기술·팀 역할·인터페이스·HOME 하역 계약은 계속 따른다.
+- 새 하드웨어와 적재용량·탑승 기한은 미확정이다. 공항 현장 운영과 실차 검증 상태는 [시나리오와 증빙](MOVEIT_AIRPORT.md)에 기록한다.
+
 ## 3. 세부 기술 결정 상태
 
 다음 항목은 승인된 아키텍처 범위 안에서 구현 전에 최종 결정해야 한다.
@@ -463,7 +470,7 @@ Priority P1·Priority P2 기능 때문에 Priority P0 전체 미션 개발을 �
 | P-011 | 로컬 Controller 최종 선정 | VERIFY | D | A |
 | P-012 | 웹·ROS2 서비스 재시작 시 미션 복구 | A SQLite 복구 검증 (MOCK), 실제 웹 연동 대기 | A·E | A |
 | P-013 | 실차 안전 정지·재개 세부 절차 | VERIFY | C·D | A |
-| P-014 | HOME·A~D 실제 Pose 및 지도 기준 | VERIFY | C·D | A |
+| P-014 | 강의실 HOME·S1·S2·G1·G2 실제 Pose 및 지도 기준 | VERIFY | C·D | A |
 | P-015 | 요청 타임아웃·재시도·취소 정책 | PENDING | A·C·D | A |
 | P-016 | TurtleBot3 실차 OS·드라이버·OpenCR 펌웨어의 Jazzy 호환성 | VERIFY | C·D | A |
 
@@ -500,6 +507,7 @@ Gate별 상세 절차는 `docs/SIM_TO_REAL.md`를 따른다.
 
 | 날짜 | 변경 사항 | 승인권자 |
 |---|---|---|
+| 2026-11-24 | MOVEIT 공항 활용 목적, 공항 SIM·강의실 REAL 시연 범위 승인 (ADR-016) | A |
 | 2026-11-16 | 최종 기획 제안서 최초 작성 기준 | — |
 | 2026-11-17 | 최종 기획서 역할 및 책임 구조 개정 | A |
 | 2026-11-17 | 하드웨어·Bringup C 전담 확정 | A |
