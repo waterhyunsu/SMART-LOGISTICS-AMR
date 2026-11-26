@@ -452,7 +452,7 @@ Priority P1·Priority P2 기능 때문에 Priority P0 전체 미션 개발을 �
 |---|---|---|---|---|
 | P-001 | A↔C 최적화 요청의 Service/Action 선택 | 승인 (ADR-015) | A·C | A |
 | P-002 | A↔D 직접 Nav2 Action 사용 또는 Adapter 구성 | PENDING | A·D | A |
-| P-003 | E↔ROS2 연결 방식 | PENDING | A·E | A |
+| P-003 | E↔ROS2 연결 방식 | [공항 단일 주문 SIM은 E 백엔드 → A HTTP/JSON](../ros2_ws/src/mission_manager/WEB_SIM.md), E 배포 어댑터·실차 대기 | A·E | A |
 | P-004 | 공통 `.msg`·`.srv` 정의 및 필드 | 승인 (ADR-015) | A, 관련 담당 | A |
 | P-005 | OptimizeRoute 외 런타임 이름 및 QoS | PENDING | 관련 담당 | A |
 | P-006 | 계획 식별·활성 버전의 영속 저장 구현 | A SQLite 복원 검증 (MOCK) | A·C | A |
