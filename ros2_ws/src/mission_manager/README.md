@@ -1,5 +1,7 @@
 # Mission Manager 첫 실행
 
+웹에서 공항 SIM 주문을 등록하고 작업자의 적재·하역 확인으로 HOME까지 진행하는 실행기는 [A↔E SIM 연결 계약](WEB_SIM.md)을 참조한다.
+
 두 터미널 모두 빌드한 `ros2_ws`에서 아래 환경을 적용한다.
 
 ```bash
